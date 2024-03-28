@@ -1,0 +1,5 @@
+name: seqtk # conda environment name #conda env create --name seqtk --file=seqtk.yml
+channels:
+- bioconda
+dependencies:
+- seqtk
