@@ -1,0 +1,16 @@
+######################
+### DATA TO MODIFY ###
+######################
+# fastq file to analyse
+r1: "/trinity/home/etempez/test_remapping/Cinétique_illumina_MCF/NG-32390_MCF_10h_lib666597_10168_3_1.fastq.gz"
+r2: "/trinity/home/etempez/test_remapping/Cinétique_illumina_MCF/NG-32390_MCF_10h_lib666597_10168_3_2.fastq.gz"
+# read length
+read_lg: 151
+
+# for each species, should contain .fa / .genome files
+folder_species: "/trinity/home/etempez/test_remapping/genome_final"
+
+# INDEX LIBRAIRIE METAGENOME - illumina
+# produced independently of that script by :
+# bowtie2-build reference.fasta index_name;
+bt_build: "/trinity/home/etempez/test_remapping/genome_final/bowtie/Librairie_final_1kb_Bowtie"
