@@ -16,6 +16,7 @@ def get_prefix(file_path, is_paired_illumina = False):
         prefix = prefix[:last_underscore]
     return prefix
 
+# get species from species file, in order to iterate on them
 def get_species(species_file):
     with open(species_file, "r") as f:
         species = [line.strip() for line in f]
@@ -167,7 +168,7 @@ rule process_species:
             awk -F "\t" -v s="${{sp}}" '{{split($2,b,":"); split(b[2],c,"_"); split($3,a,"_");
             if ((a[1]==s) || ((b[1] == "SN") && (c[1] == s))) print $0}}' {input.sam} > {params.folder}out
 
-            # read concordants
+            # reads concordants
             echo "reading concordants ..."
             samtools view -F 4 {params.folder}out | awk -F "\t" '{{print $1}}' | sort | uniq -c | awk -F " " '{{if ($1 == "2") print $2}}' > $CONCORD
 
