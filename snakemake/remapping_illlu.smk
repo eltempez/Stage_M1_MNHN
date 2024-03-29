@@ -16,6 +16,11 @@ def get_prefix(file_path, is_paired_illumina = False):
         prefix = prefix[:last_underscore]
     return prefix
 
+def get_species(species_file):
+    with open(species_file, "r") as f:
+        species = [line.strip() for line in f]
+    return species
+
 ## Filenames
 #input
 R1 = config["r1"]
@@ -43,7 +48,7 @@ rule all:
         UNMAP_FA_R1,
         UNMAP_FA_R2,
         METRICS,
-        "out"
+        expand("{fold}mapped/{name}_{build}_concSH_{species}.txt", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME, species = get_species("species.txt"))
         
 
 
@@ -135,10 +140,12 @@ rule process_species:
         r1 = R1,
         r2 = R2
     output:
-        out = "out"
+        concord = expand("{fold}mapped/{name}_{build}_concSH_{species}.txt", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME, species = get_species("species.txt"))
     envmodules:
         "biology",
         "samtools"
+    conda:
+        "seqtk.yml"
     params: 
         name = R1_NAME, 
         build = BUILD_NAME,
@@ -152,11 +159,20 @@ rule process_species:
 
             # store filenames
             CONCORD={params.folder}mapped/{params.name}_{params.build}_concSH_${{sp}}.txt
+            CONCORD_R1={params.folder}mapped/{params.name}_{params.build}_concSH_${{sp}}_R1.fastq
+            CONCORD_R2={params.folder}mapped/{params.name}_{params.build}_concSH_${{sp}}_R2.fastq
 
             # if species name present in line, prints line in temporary out file
-            echo "extracting info from sam file ...""
+            echo "extracting info from sam file ..."
             awk -F "\t" -v s="${{sp}}" '{{split($2,b,":"); split(b[2],c,"_"); split($3,a,"_");
-            if ((a[1]==s) || ((b[1] == "SN") && (c[1] == s))) print $0}}' {input.sam} > out
+            if ((a[1]==s) || ((b[1] == "SN") && (c[1] == s))) print $0}}' {input.sam} > {params.folder}out
+
+            # read concordants
+            echo "reading concordants ..."
+            samtools view -F 4 {params.folder}out | awk -F "\t" '{{print $1}}' | sort | uniq -c | awk -F " " '{{if ($1 == "2") print $2}}' > $CONCORD
+
+            # remove temporary file
+            rm {params.folder}out
         done
         """
 
