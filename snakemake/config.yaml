@@ -4,8 +4,6 @@
 # fastq file to analyse
 r1: "/mnt/beegfs/etempez/remapping/Cinétique_illumina_MCF/NG-32390_MCF_10h_lib666597_10174_2_1.fastq.gz"
 r2: "/mnt/beegfs/etempez/remapping/Cinétique_illumina_MCF/NG-32390_MCF_10h_lib666597_10174_2_2.fastq.gz"
-# read length
-read_lg: 151
 
 # for each species, should contain .fa / .genome files
 folder_species: "/mnt/beegfs/etempez/remapping/genome_final/fasta"
@@ -13,7 +11,7 @@ folder_species: "/mnt/beegfs/etempez/remapping/genome_final/fasta"
 # INDEX LIBRAIRIE METAGENOME - illumina
 # produced independently of that script by :
 # bowtie2-build reference.fasta index_name;
-bt_build: "/mnt/beegfs/etempez/remapping/genome_final/bowtie/test"
+bt_build: "/mnt/beegfs/etempez/remapping/genome_final/bowtie/ref/Librairie_final_1kb_Bowtie"
 
 # output folder
 # don't forget "/" at the end (leave empty quotes if you want the output in the folder from which you are launching the snakemake command line)

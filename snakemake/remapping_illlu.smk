@@ -40,9 +40,11 @@ METRICS = f"{OUTPUT_FOLD}metrics.txt"
 ###########################
 rule all:
     input:
-        dynamic("{OUTPUT_FOLD}mapped/{R1_NAME}_{BUILD_NAME}_concSH_{species}.txt"),
-        dynamic("{OUTPUT_FOLD}mapped/{R1_NAME}_{BUILD_NAME}_concSH_{species}_R1.fastq"),
-        dynamic("{OUTPUT_FOLD}mapped/{R1_NAME}_{BUILD_NAME}_concSH_{species}_R2.fastq")
+        UNMAP_FA_R1,
+        UNMAP_FA_R2,
+        METRICS,
+        "out"
+        
 
 
 ## mapping against metagenome
@@ -54,12 +56,11 @@ rule bowtie_mapping:
         idx = BT_BUILD
     output:
         sam = SAM,
-        log_bowtie = "{OUTPUT_FOLD}log_bowtie2"
     envmodules:
         "biology",
         "bowtie2"
     shell:
-        "bowtie2 -p 10 -x {params.idx} -1 {input.r1} -2 {input.r2} -S {output.sam} 2> {output.log_bowtie}"
+        "bowtie2 -p 10 -x {params.idx} -1 {input.r1} -2 {input.r2} -S {output.sam}"
 
 ## rescue of unmapped reads
 # get all unmapped reads
@@ -134,14 +135,10 @@ rule process_species:
         r1 = R1,
         r2 = R2
     output:
-        concord = dynamic("{OUTPUT_FOLD}mapped/{R1_NAME}_{BUILD_NAME}_concSH_{species}.txt"),
-        concord_r1 = dynamic("{OUTPUT_FOLD}mapped/{R1_NAME}_{BUILD_NAME}_concSH_{species}_R1.fastq"),
-        concord_r2 = dynamic("{OUTPUT_FOLD}mapped/{R1_NAME}_{BUILD_NAME}_concSH_{species}_R2.fastq")
+        out = "out"
     envmodules:
         "biology",
         "samtools"
-    conda:
-        "seqtk.yml"
     params: 
         name = R1_NAME, 
         build = BUILD_NAME,
@@ -151,25 +148,15 @@ rule process_species:
         species=$(cat {input.species_file})
         # for each species
         for sp in $species; do
-            echo "extracting species $sp ..."
+            echo "$sp ..."
 
             # store filenames
             CONCORD={params.folder}mapped/{params.name}_{params.build}_concSH_${{sp}}.txt
-            CONCORD_R1={params.folder}mapped/{params.name}_{params.build}_concSH_${{sp}}_R1.fastq
-            CONCORD_R2={params.folder}mapped/{params.name}_{params.build}_concSH_${{sp}}_R2.fastq
 
-            # read info on species in sam file and store in out file
+            # if species name present in line, prints line in temporary out file
+            echo "extracting info from sam file ...""
             awk -F "\t" -v s="${{sp}}" '{{split($2,b,":"); split(b[2],c,"_"); split($3,a,"_");
             if ((a[1]==s) || ((b[1] == "SN") && (c[1] == s))) print $0}}' {input.sam} > out
-
-            # read concordants and single hits and store in files
-            samtools view -F 4 out | awk -F "\t" '{{print $1}}' | sort | uniq -c | awk -F " " '{{if ($1 == "2") print $2}}' > $CONCORD
-
-            seqtk subseq {input.r1} {output.concord} > $CONCORD_R1
-            seqtk subseq {input.r2} {output.concord} > $CONCORD_R2
         done
-
-        # delete temporaty file
-        rm out
         """
 
