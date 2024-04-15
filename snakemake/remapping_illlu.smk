@@ -3,8 +3,6 @@
 #############################
 ## Import modules
 import os
-from os.path import isfile, join
-
 
 ## Functions
 def get_prefix(file_path, is_paired_illumina = False):
@@ -24,85 +22,89 @@ def check_slash(folder_path):
         return folder_path
     return folder_path + "/"
 
-# check if the files in a folder are fasta files -> return the list of species for which they are
-def check_fasta_files(folder_path):
-    species_fasta = []
-    # get all files from folder
-    onlyfiles = [f for f in os.listdir(folder_path) if isfile(join(folder_path, f))]
-    # is they are .fasta files, add the prefix into a list
-    for f in onlyfiles:
-        if f.split(".")[-1] == "fasta":
-            species_fasta.append(get_prefix(f))
-    return species_fasta
-
-# get species from species file, in order to iterate on them
-def get_species(species_file):
-    with open(species_file, "r") as f:
-        species = [line.strip() for line in f]
-    return species
-
 
 ## Filenames
-#inputs
+# inputs
 R1 = config["r1"]
 R2 = config["r2"]
 READ_LG = config["read_lg"]
 SPECIES_FOLD = check_slash(config["folder_species"])
+OUTPUT_FOLD = check_slash(config["output_folder"])
 BUILD_NAME = config["build_name"]
 R1_NAME = get_prefix(R1, True)
-OUTPUT_FOLD = check_slash(config["output_folder"])
 # outputs
-BT_BUILD = f"{OUTPUT_FOLD}genome_data/{BUILD_NAME}"
 SPECIES_LST = f"{OUTPUT_FOLD}species.txt"
 
+## wildcards
+# .fasta and .fa files in the initial metagenome
+FASTA_SPECIES, = glob_wildcards(os.path.join(SPECIES_FOLD, "{fasta_species}.fasta"))
+FA_SPECIES, = glob_wildcards(os.path.join(SPECIES_FOLD, "{fa_species}.fa"))
+# all species in the metagenome
+ALL_SPECIES = FASTA_SPECIES + FA_SPECIES
 
+# function to get output files from rule extract_concordants
+def get_concord_files(wildcards):
+    checkpoint_output = checkpoints.extract_concordants.get(**wildcards).output[0]
+    return expand("{fold}mapping/mapped/{i}.txt", fold = OUTPUT_FOLD, i = glob_wildcards(os.path.join(checkpoint_output, "{i}.txt")).i)
 
+# function to get output files from 
+
+    
 ###########################
 ##### snakemake rules #####
 ###########################
 rule all:
     input:
-        fa_files = expand("{folder}{species}.fa", folder =  SPECIES_FOLD, species = check_fasta_files(SPECIES_FOLD)),
-        bowtie_index = expand("{folder}genome_data/{index_name}{extension}.bt2", folder = OUTPUT_FOLD, index_name = BUILD_NAME, extension = [".1", ".2", ".3", ".4", ".rev.1", ".rev.2"]),
-        unmap_r1 = f"{OUTPUT_FOLD}{R1_NAME}_{BUILD_NAME}_unmapped_R1.fasta",
-        unmap_r2 = f"{OUTPUT_FOLD}{R1_NAME}_{BUILD_NAME}_unmapped_R2.fasta",
-        metrics = f"{OUTPUT_FOLD}metrics.txt",
-        metrics_species = expand("{fold}mapped/{species}_metrics.txt", fold = OUTPUT_FOLD, species = get_species(SPECIES_LST)),
-        covfile = expand("{fold}remapping/{name}_{build}_concSH_{species}.coverage", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME, species = get_species(SPECIES_LST)),
-        covimg = expand("{fold}remapping/{name}_{build}_concSH_{species}.svg", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME, species = get_species(SPECIES_LST))      
+        unmap_r1 = expand("{fold}mapping/unmapped/{name}_{build}.unmapped_R1.fasta", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME),
+        unmap_r2 = expand("{fold}mapping/unmapped/{name}_{build}.unmapped_R2.fasta", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME),
+        metrics = expand("{fold}mapping/unmapped/metrics.txt", fold = OUTPUT_FOLD),
+        concord_r1 = expand("{fold}mapping/mapped/{name}_{build}_concSH_{{species}}_R1.fastq", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME),
+        concord_r2 = expand("{fold}mapping/mapped/{name}_{build}_concSH_{{species}}_R2.fastq", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME)
 
 
 ## setup
-# transform every .fasta file in the species folder into .fa files (for easier access)
-rule create_fa:
-    input:
-        fasta_files = expand("{folder}{species}.fasta", folder = SPECIES_FOLD, species = check_fasta_files(SPECIES_FOLD))
+# in case of duplicated contig names in fasta files : add the species name at the beginning of the contig name
+rule handle_contigs_fa:
     output:
-        fa_files = expand("{folder}{species}.fa", folder =  SPECIES_FOLD, species = check_fasta_files(SPECIES_FOLD))
-    params: 
-        species_folder = SPECIES_FOLD
-    shell:
-        """
-        for file in {input.fasta_files}; do
-            mv "$file" "${{file%.fasta}}.fa"
-        done
-        """
+        fa_files = expand("{fold}genome_data/fa/{species}.fa", fold = OUTPUT_FOLD, species = ALL_SPECIES)
+    params:
+        species_fold = SPECIES_FOLD,
+        output_fold = expand("{out}genome_data/fa/", out = OUTPUT_FOLD)
+    run:
+        # create output directory if doesn't exist
+        shell("mkdir -p {params.output_fold}")
+        # for each file in the matagenome
+        for file in os.listdir(params.species_fold):
+            species_name = get_prefix(file)
+            output_name = f"{params.output_fold[0]}{species_name}.fa"
+            with open(f"{params.species_fold}{file}", "r") as f_in:
+                with open(output_name, "w") as f_out:
+                    for line in f_in:
+                        if line.startswith(">") and species_name not in line:
+                        # change the contig name if needed
+                            new_line = f">{species_name}_{line[1:]}"
+                            f_out.write(new_line)
+                        else:
+                            f_out.write(line)
+
 
 # build bowtie library
 rule build_library:
+    input:
+        fa_files = expand("{fold}genome_data/fa/{species}.fa", fold = OUTPUT_FOLD, species = ALL_SPECIES)
     output:
-        bowtie_index = expand("{folder}genome_data/{index_name}{extension}.bt2", folder = OUTPUT_FOLD, index_name = BUILD_NAME, extension = [".1", ".2", ".3", ".4", ".rev.1", ".rev.2"])
+        bowtie_index = expand("{folder}genome_data/index/{index_name}{extension}.bt2", folder = OUTPUT_FOLD, index_name = BUILD_NAME, extension = [".1", ".2", ".3", ".4", ".rev.1", ".rev.2"])
     params:
-        species_fold = SPECIES_FOLD,
-        index_name = BUILD_NAME,
-        output_fold = OUTPUT_FOLD + "genome_data/"
+        fa_fold = expand("{fold}genome_data/fa/", fold = OUTPUT_FOLD),
+        output_fold = expand("{fold}genome_data/index/", fold = OUTPUT_FOLD),
+        index_name = BUILD_NAME
     envmodules:
         "biology",
         "bowtie2"
     shell:
         """
         echo "building bowtie library..."
-        bowtie2-build -q {params.species_fold}* {params.output_fold}{params.index_name}
+        bowtie2-build -q {params.fa_fold}* {params.output_fold}{params.index_name}
         """
     
 
@@ -110,11 +112,12 @@ rule build_library:
 rule bowtie_mapping:
     input:
         r1 = R1,
-        r2 = R2
+        r2 = R2,
+        bowtie_index = expand("{folder}genome_data/index/{index_name}{extension}.bt2", folder = OUTPUT_FOLD, index_name = BUILD_NAME, extension = [".1", ".2", ".3", ".4", ".rev.1", ".rev.2"])
     params:
-        idx = BT_BUILD
+        idx = expand("{fold}genome_data/index/{name}", fold = OUTPUT_FOLD, name = BUILD_NAME)
     output:
-        sam = f"{OUTPUT_FOLD}{R1_NAME}_{BUILD_NAME}.sam"
+        sam = expand("{fold}mapping/{name}_{build}.sam", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME)
     envmodules:
         "biology",
         "bowtie2"
@@ -128,9 +131,9 @@ rule bowtie_mapping:
 # get all unmapped reads
 rule get_unmapped:
     input:
-        sam = f"{OUTPUT_FOLD}{R1_NAME}_{BUILD_NAME}.sam"
+        sam = expand("{fold}mapping/{name}_{build}.sam", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME)
     output:
-        unmap = f"{OUTPUT_FOLD}{R1_NAME}_{BUILD_NAME}_unmapped.txt"
+        unmap = expand("{fold}mapping/unmapped/{name}_{build}.unmapped.txt", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME)
     envmodules:
         "biology",
         "samtools"
@@ -145,10 +148,10 @@ rule sort_unmapped:
     input:
         r1 = R1,
         r2 = R2,
-        unmap = f"{OUTPUT_FOLD}{R1_NAME}_{BUILD_NAME}_unmapped.txt"
+        unmap = expand("{fold}mapping/unmapped/{name}_{build}.unmapped.txt", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME)
     output:
-        unmap_r1 = f"{OUTPUT_FOLD}{R1_NAME}_{BUILD_NAME}_unmapped_R1.fasta",
-        unmap_r2 = f"{OUTPUT_FOLD}{R1_NAME}_{BUILD_NAME}_unmapped_R2.fasta"
+        unmap_r1 = expand("{fold}mapping/unmapped/{name}_{build}.unmapped_R1.fasta", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME),
+        unmap_r2 = expand("{fold}mapping/unmapped/{name}_{build}.unmapped_R2.fasta", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME)
     conda:
         "seqtk.yml"
     shell:
@@ -161,9 +164,9 @@ rule sort_unmapped:
 # print number of unmapped reads in metrics file
 rule print_unmapped:
     input:
-        unmap = f"{OUTPUT_FOLD}{R1_NAME}_{BUILD_NAME}_unmapped.txt"
+        unmap = expand("{fold}mapping/unmapped/{name}_{build}.unmapped.txt", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME)
     output:
-        metrics = f"{OUTPUT_FOLD}metrics.txt"
+        metrics = expand("{fold}mapping/unmapped/metrics.txt", fold = OUTPUT_FOLD)
     shell:
         """
         echo "** Number of unmapped reads (mate - to *2)" >> {output.metrics}
@@ -174,7 +177,7 @@ rule print_unmapped:
 # extract all species present in sam file and put them in txt file
 rule extract_species:
     input:
-        sam = f"{OUTPUT_FOLD}{R1_NAME}_{BUILD_NAME}.sam"
+        sam = expand("{fold}mapping/{name}_{build}.sam", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME)
     output:
         species_file = SPECIES_LST
     envmodules:
@@ -187,12 +190,12 @@ rule extract_species:
         """
 
 # for each species : read concordants and put all of their id in a txt file
-rule extract_concordants:
+checkpoint extract_concordants:
     input: 
         species_file = SPECIES_LST,
-        sam = f"{OUTPUT_FOLD}{R1_NAME}_{BUILD_NAME}.sam",
+        sam = expand("{fold}mapping/{name}_{build}.sam", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME)
     output:
-        concord = expand("{fold}mapped/{name}_{build}_concSH_{species}.txt", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME, species = get_species(SPECIES_LST))
+        directory(OUTPUT_FOLD + "mapping/mapped/")
     envmodules:
         "biology",
         "samtools"
@@ -202,6 +205,7 @@ rule extract_concordants:
         folder = OUTPUT_FOLD
     shell:
         """
+        mkdir -p {output[0]}
         species=$(cat {input.species_file})
         echo "looking for concordants..."
         # for each species
@@ -209,13 +213,13 @@ rule extract_concordants:
             echo $sp
 
             # filename
-            CONCORD={params.folder}mapped/{params.name}_{params.build}_concSH_${{sp}}.txt
+            CONCORD={params.folder}mapping/mapped/{params.name}_{params.build}_concSH_${{sp}}.txt
 
             # if species name present in line, prints line in temporary out file
             awk -F "\t" -v s="${{sp}}" '{{split($2,b,":"); split(b[2],c,"_"); split($3,a,"_");
             if ((a[1]==s) || ((b[1] == "SN") && (c[1] == s))) print $0}}' {input.sam} > {params.folder}out
 
-            # reads concordants
+            # reads concordants from out file
             samtools view -F 4 --verbosity 2 {params.folder}out | awk -F "\t" '{{print $1}}' | sort | uniq -c | awk -F " " '{{if ($1 == "2") print $2}}' > $CONCORD
 
             # remove temporary file
@@ -226,19 +230,19 @@ rule extract_concordants:
 # for each species : sort concordants in fastq files depending on R1 and R2 
 rule sort_concordants:
     input:
+        get_concord_files,
         species_file = SPECIES_LST,
         r1 = R1,
-        r2 = R2,
-        concord = expand("{fold}mapped/{name}_{build}_concSH_{species}.txt", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME, species = get_species(SPECIES_LST))
+        r2 = R2
     output:
-        concord_r1 = expand("{fold}mapped/{name}_{build}_concSH_{species}_R1.fastq", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME, species = get_species(SPECIES_LST)),
-        concord_r2 = expand("{fold}mapped/{name}_{build}_concSH_{species}_R2.fastq", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME, species = get_species(SPECIES_LST))
+        concord_r1 = expand("{fold}mapping/mapped/{name}_{build}_concSH_{{species}}_R1.fastq", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME),
+        concord_r2 = expand("{fold}mapping/mapped/{name}_{build}_concSH_{{species}}_R2.fastq", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME)
     conda:
         "seqtk.yml"
     params: 
         name = R1_NAME, 
         build = BUILD_NAME,
-        folder = OUTPUT_FOLD
+        folder = OUTPUT_FOLD + "mapping/mapped/"
     shell:
         """
         species=$(cat {input.species_file})
@@ -248,9 +252,9 @@ rule sort_concordants:
             echo $sp
 
             # filenames
-            CONCORD={params.folder}mapped/{params.name}_{params.build}_concSH_${{sp}}.txt
-            CONCORD_R1={params.folder}mapped/{params.name}_{params.build}_concSH_${{sp}}_R1.fastq
-            CONCORD_R2={params.folder}mapped/{params.name}_{params.build}_concSH_${{sp}}_R2.fastq
+            CONCORD={params.folder}{params.name}_{params.build}_concSH_${{sp}}.txt
+            CONCORD_R1={params.folder}{params.name}_{params.build}_concSH_${{sp}}_R1.fastq
+            CONCORD_R2={params.folder}{params.name}_{params.build}_concSH_${{sp}}_R2.fastq
 
             # divide concordants into R1 and R2
             seqtk subseq {input.r1} $CONCORD > $CONCORD_R1
@@ -262,9 +266,9 @@ rule sort_concordants:
 rule metrics_per_species:
     input:
         species_file = SPECIES_LST,
-        concord_r1 = expand("{fold}mapped/{name}_{build}_concSH_{species}_R1.fastq", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME, species = get_species(SPECIES_LST))
+        concord_r1 = expand("{fold}mapped/{name}_{build}_concSH_{{species}}_R1.fastq", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME)
     output:
-        metrics = expand("{fold}mapped/{species}_metrics.txt", fold = OUTPUT_FOLD, species = get_species(SPECIES_LST))
+        metrics = expand("{fold}mapped/{{species}}_metrics.txt", fold = OUTPUT_FOLD)
     params: 
         name = R1_NAME, 
         build = BUILD_NAME,
@@ -300,9 +304,9 @@ rule setup_remapping:
     input:
         species_file = SPECIES_LST,
         sam = f"{OUTPUT_FOLD}{R1_NAME}_{BUILD_NAME}.sam",
-        concord = expand("{fold}mapped/{name}_{build}_concSH_{species}.txt", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME, species = get_species(SPECIES_LST))
+        concord = expand("{fold}mapped/{name}_{build}_concSH_{{species}}.txt", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME)
     output:
-        remap_bam = expand("{fold}remapping/{name}_{build}_concSH_{species}.bam", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME, species = get_species(SPECIES_LST)),
+        remap_bam = expand("{fold}remapping/{name}_{build}_concSH_{{species}}.bam", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME),
     params: 
         name = R1_NAME, 
         build = BUILD_NAME,
@@ -345,11 +349,11 @@ rule setup_remapping:
 rule remapping:
     input:
         species_file = SPECIES_LST,
-        fa_files = expand("{folder}{species}.fa", folder =  SPECIES_FOLD, species = get_species(SPECIES_LST)),
-        remap_bam = expand("{fold}remapping/{name}_{build}_concSH_{species}.bam", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME, species = get_species(SPECIES_LST))
+        fa_files = expand("{folder}{{species}}.fa", folder =  SPECIES_FOLD),
+        remap_bam = expand("{fold}remapping/{name}_{build}_concSH_{{species}}.bam", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME)
     output:
-        covfile = expand("{fold}remapping/{name}_{build}_concSH_{species}.coverage", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME, species = get_species(SPECIES_LST)),
-        covimg = expand("{fold}remapping/{name}_{build}_concSH_{species}.svg", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME, species = get_species(SPECIES_LST))
+        covfile = expand("{fold}remapping/{name}_{build}_concSH_{{species}}.coverage", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME),
+        covimg = expand("{fold}remapping/{name}_{build}_concSH_{{species}}.svg", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME)
     envmodules:
         "userspace",
         "biology",
