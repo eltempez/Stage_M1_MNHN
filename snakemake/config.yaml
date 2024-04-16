@@ -11,8 +11,7 @@ read_lg: 151
 folder_species: "/mnt/beegfs/etempez/remapping/genome/"
 
 # output folder (leave empty quotes if you want the output in the folder from which you are launching the snakemake command line)
-# /!\ .fasta files will be converted into .fa files automatically
 output_folder: "/mnt/beegfs/etempez/remapping/outputs/"
 
-# build name : name of the metagenome
+# build name : name of the metagenome version
 build_name: "librairie_finale"

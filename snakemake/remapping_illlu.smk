@@ -42,13 +42,37 @@ FA_SPECIES, = glob_wildcards(os.path.join(SPECIES_FOLD, "{fa_species}.fa"))
 # all species in the metagenome
 ALL_SPECIES = FASTA_SPECIES + FA_SPECIES
 
-# function to get output files from rule extract_concordants
+## get output files from checkpoints
+# from rule extract_concordants
 def get_concord_files(wildcards):
     checkpoint_output = checkpoints.extract_concordants.get(**wildcards).output[0]
-    return expand("{fold}mapping/mapped/{i}.txt", fold = OUTPUT_FOLD, i = glob_wildcards(os.path.join(checkpoint_output, "{i}.txt")).i)
+    return expand("{fold}mapping/mapped/concord/{i}.txt", fold = OUTPUT_FOLD, i = glob_wildcards(os.path.join(checkpoint_output, "{i}.txt")).i)
 
-# function to get output files from 
+# from rule sort_concordants
+def get_concordR_files(wildcards):
+    checkpoint_output = checkpoints.sort_concordants.get(**wildcards).output[0]
+    return expand("{fold}mapping/mapped/concord_r/{i}.fastq", fold = OUTPUT_FOLD, i = glob_wildcards(os.path.join(checkpoint_output, "{i}.fastq")).i)
 
+# from rule metrics_per_species
+def get_metrics_files(wildcards):
+    checkpoint_output = checkpoints.metrics_per_species.get(**wildcards).output[0]
+    return expand("{fold}mapping/mapped/metrics/{i}.txt", fold = OUTPUT_FOLD, i = glob_wildcards(os.path.join(checkpoint_output, "{i}.txt")).i)
+
+# from rule setup_remapping
+def get_bam_files(wildcards):
+    checkpoint_output = checkpoints.setup_remapping.get(**wildcards).output[0]
+    return expand("{fold}mapping/mapped/bam/{i}.bam", fold = OUTPUT_FOLD, i = glob_wildcards(os.path.join(checkpoint_output, "{i}.bam")).i)
+
+# from rule remapping
+def get_covfiles(wildcards):
+    checkpoint_output = checkpoints.remapping.get(**wildcards).output[0]
+    return expand("{fold}mapping/mapped/coverage/{i}.coverage", fold = OUTPUT_FOLD, i = glob_wildcards(os.path.join(checkpoint_output, "{i}.coverage")).i)
+
+# from rule remapping
+def get_svgfiles(wildcards):
+    checkpoint_output = checkpoints.remapping.get(**wildcards).output[0]
+    return expand("{fold}mapping/mapped/coverage/{i}.svg", fold = OUTPUT_FOLD, i = glob_wildcards(os.path.join(checkpoint_output, "{i}.svg")).i)
+ 
     
 ###########################
 ##### snakemake rules #####
@@ -58,8 +82,9 @@ rule all:
         unmap_r1 = expand("{fold}mapping/unmapped/{name}_{build}.unmapped_R1.fasta", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME),
         unmap_r2 = expand("{fold}mapping/unmapped/{name}_{build}.unmapped_R2.fasta", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME),
         metrics = expand("{fold}mapping/unmapped/metrics.txt", fold = OUTPUT_FOLD),
-        concord_r1 = expand("{fold}mapping/mapped/{name}_{build}_concSH_{{species}}_R1.fastq", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME),
-        concord_r2 = expand("{fold}mapping/mapped/{name}_{build}_concSH_{{species}}_R2.fastq", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME)
+        covfiles = get_covfiles,
+        svgfiles = get_svgfiles,
+        metrics_sp = get_metrics_files
 
 
 ## setup
@@ -195,7 +220,7 @@ checkpoint extract_concordants:
         species_file = SPECIES_LST,
         sam = expand("{fold}mapping/{name}_{build}.sam", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME)
     output:
-        directory(OUTPUT_FOLD + "mapping/mapped/")
+        directory(OUTPUT_FOLD + "mapping/mapped/concord/")
     envmodules:
         "biology",
         "samtools"
@@ -213,7 +238,7 @@ checkpoint extract_concordants:
             echo $sp
 
             # filename
-            CONCORD={params.folder}mapping/mapped/{params.name}_{params.build}_concSH_${{sp}}.txt
+            CONCORD={params.folder}mapping/mapped/concord/{params.name}_{params.build}_concSH_${{sp}}.txt
 
             # if species name present in line, prints line in temporary out file
             awk -F "\t" -v s="${{sp}}" '{{split($2,b,":"); split(b[2],c,"_"); split($3,a,"_");
@@ -228,23 +253,23 @@ checkpoint extract_concordants:
         """
 
 # for each species : sort concordants in fastq files depending on R1 and R2 
-rule sort_concordants:
+checkpoint sort_concordants:
     input:
         get_concord_files,
         species_file = SPECIES_LST,
         r1 = R1,
         r2 = R2
     output:
-        concord_r1 = expand("{fold}mapping/mapped/{name}_{build}_concSH_{{species}}_R1.fastq", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME),
-        concord_r2 = expand("{fold}mapping/mapped/{name}_{build}_concSH_{{species}}_R2.fastq", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME)
+        directory(OUTPUT_FOLD + "mapping/mapped/concord_r/")
     conda:
         "seqtk.yml"
     params: 
         name = R1_NAME, 
         build = BUILD_NAME,
-        folder = OUTPUT_FOLD + "mapping/mapped/"
+        folder = OUTPUT_FOLD
     shell:
         """
+        mkdir -p {output[0]}
         species=$(cat {input.species_file})
         echo "sorting concordants..."
         # for each species
@@ -252,9 +277,9 @@ rule sort_concordants:
             echo $sp
 
             # filenames
-            CONCORD={params.folder}{params.name}_{params.build}_concSH_${{sp}}.txt
-            CONCORD_R1={params.folder}{params.name}_{params.build}_concSH_${{sp}}_R1.fastq
-            CONCORD_R2={params.folder}{params.name}_{params.build}_concSH_${{sp}}_R2.fastq
+            CONCORD={params.folder}mapping/mapped/concord/{params.name}_{params.build}_concSH_${{sp}}.txt
+            CONCORD_R1={params.folder}mapping/mapped/concord_r/{params.name}_{params.build}_concSH_${{sp}}_R1.fastq
+            CONCORD_R2={params.folder}mapping/mapped/concord_r/{params.name}_{params.build}_concSH_${{sp}}_R2.fastq
 
             # divide concordants into R1 and R2
             seqtk subseq {input.r1} $CONCORD > $CONCORD_R1
@@ -263,12 +288,12 @@ rule sort_concordants:
         """
 
 # create metrics file for each species
-rule metrics_per_species:
+checkpoint metrics_per_species:
     input:
         species_file = SPECIES_LST,
-        concord_r1 = expand("{fold}mapped/{name}_{build}_concSH_{{species}}_R1.fastq", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME)
+        concord_r = get_concordR_files
     output:
-        metrics = expand("{fold}mapped/{{species}}_metrics.txt", fold = OUTPUT_FOLD)
+        directory(OUTPUT_FOLD + "mapping/mapped/metrics/")
     params: 
         name = R1_NAME, 
         build = BUILD_NAME,
@@ -276,13 +301,14 @@ rule metrics_per_species:
         read_lg = READ_LG
     shell:
         """
+        mkdir -p {output[0]}
         species=$(cat {input.species_file})
         # for each species
         for sp in $species; do
             
             # filenames
-            CONCORD_R1={params.folder}mapped/{params.name}_{params.build}_concSH_${{sp}}_R1.fastq
-            METRIC={params.folder}mapped/${{sp}}_metrics.txt
+            CONCORD_R1={params.folder}mapping/mapped/concord_r/{params.name}_{params.build}_concSH_${{sp}}_R1.fastq
+            METRIC={params.folder}mapping/mapped/metrics/${{sp}}_metrics.txt
 
             # add infos to metrics file
             echo -e "Library\t$sp" > $METRIC
@@ -300,13 +326,13 @@ rule metrics_per_species:
 
 # for each species: remapping on reference genome
 # create .bam files
-rule setup_remapping:
+checkpoint setup_remapping:
     input:
         species_file = SPECIES_LST,
-        sam = f"{OUTPUT_FOLD}{R1_NAME}_{BUILD_NAME}.sam",
-        concord = expand("{fold}mapped/{name}_{build}_concSH_{{species}}.txt", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME)
+        sam = expand("{fold}mapping/{name}_{build}.sam", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME),
+        concord = get_concord_files
     output:
-        remap_bam = expand("{fold}remapping/{name}_{build}_concSH_{{species}}.bam", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME),
+        directory(OUTPUT_FOLD + "mapping/mapped/bam/")
     params: 
         name = R1_NAME, 
         build = BUILD_NAME,
@@ -320,6 +346,7 @@ rule setup_remapping:
     threads: 16
     shell:
         """
+        mkdir -p {output[0]}
         species=$(cat {input.species_file})
         echo "setting up for remapping..."
         # for each species
@@ -327,8 +354,8 @@ rule setup_remapping:
             echo $sp
 
             # filenames
-            CONCORD={params.folder}mapped/{params.name}_{params.build}_concSH_${{sp}}.txt
-            REMAP_BAM={params.folder}remapping/{params.name}_{params.build}_concSH_${{sp}}.bam
+            CONCORD={params.folder}mapping/mapped/concord/{params.name}_{params.build}_concSH_${{sp}}.txt
+            REMAP_BAM={params.folder}mapping/mapped/bam/{params.name}_{params.build}_concSH_${{sp}}.bam
 
             # filter original sam with concordant reads only for the current species (save in temporaty file)
             java -jar $PICARD FilterSamReads --VERBOSITY ERROR --QUIET true -I {input.sam} -O {params.folder}int.sam -FILTER includeReadList -READ_LIST_FILE $CONCORD
@@ -346,14 +373,13 @@ rule setup_remapping:
 
 
 # creation of genome reference data
-rule remapping:
+checkpoint remapping:
     input:
         species_file = SPECIES_LST,
-        fa_files = expand("{folder}{{species}}.fa", folder =  SPECIES_FOLD),
-        remap_bam = expand("{fold}remapping/{name}_{build}_concSH_{{species}}.bam", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME)
+        fa_files = expand("{fold}genome_data/fa/{species}.fa", fold = OUTPUT_FOLD, species = ALL_SPECIES),
+        remap_bam = get_bam_files
     output:
-        covfile = expand("{fold}remapping/{name}_{build}_concSH_{{species}}.coverage", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME),
-        covimg = expand("{fold}remapping/{name}_{build}_concSH_{{species}}.svg", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME)
+        directory(OUTPUT_FOLD + "mapping/mapped/coverage/")
     envmodules:
         "userspace",
         "biology",
@@ -366,9 +392,10 @@ rule remapping:
         name = R1_NAME, 
         build = BUILD_NAME,
         folder = OUTPUT_FOLD,
-        species_folder = SPECIES_FOLD
+        species_folder = OUTPUT_FOLD + "genome_data/fa/"
     shell:
         """
+        mkdir -p {output[0]}
         species=$(cat {input.species_file})
         echo "calculating coverage..."
         # for each species
@@ -376,15 +403,15 @@ rule remapping:
             echo $sp
 
             # filenames
-            REMAP_BAM={params.folder}remapping/{params.name}_{params.build}_concSH_${{sp}}.bam
+            REMAP_BAM={params.folder}mapping/mapped/bam/{params.name}_{params.build}_concSH_${{sp}}.bam
             GENOME={params.species_folder}${{sp}}.fa
-            COVFILE={params.folder}remapping/{params.name}_{params.build}_concSH_${{sp}}.coverage
-            COVIMG={params.folder}remapping/{params.name}_{params.build}_concSH_${{sp}}.svg
+            COVFILE={params.folder}mapping/mapped/coverage/{params.name}_{params.build}_concSH_${{sp}}.coverage
+            COVIMG={params.folder}mapping/mapped/coverage/{params.name}_{params.build}_concSH_${{sp}}.svg
 
             # create reference genome data (.fa.fai file)
             samtools faidx $GENOME
             # create .fa.bed file
-            awk -v sp="$sp" 'BEGIN {{FS="\t"}} {{print sp "_" $1 FS "0" FS $2}}' $GENOME.fai > $GENOME.bed
+            awk 'BEGIN {{FS="\t"}} {{print $1 FS "0" FS $2}}' $GENOME.fai > $GENOME.bed
             # calculate coverage statistics
             jvarkit bamstats04 -B $GENOME.bed $REMAP_BAM > $COVFILE
             # calculate median
@@ -398,7 +425,23 @@ rule remapping:
             RATIO=$((MEDCOV * 30 / 100))
             MEDGRAPH=$(($MEDCOV + $RATIO))
             # create graph
-            java -jar $PICARD CreateSequenceDictionary --VERBOSITY ERROR --QUIET true -R $GENOME -O $GENOME.dict
+            java -jar $PICARD CreateSequenceDictionary -VERBOSITY ERROR -QUIET true -R $GENOME -O $GENOME.dict 
             jvarkit wgscoverageplotter -C $MEDGRAPH -R $GENOME $REMAP_BAM -o $COVIMG
         done
         """
+
+rule global_metrics:
+    input:
+        metrics_unmapped = expand("{fold}mapping/unmapped/metrics.txt", fold = OUTPUT_FOLD),
+        metrics_mapped = get_metrics_files
+    output:
+        glob_metrics = expand("{fold}mapping/global_metrics.txt", fold = OUTPUT_FOLD)
+    shell:
+        """
+
+        
+        
+        
+        """
+    
+
