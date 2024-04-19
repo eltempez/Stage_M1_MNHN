@@ -79,8 +79,8 @@ def get_svgfiles(wildcards):
 ###########################
 rule all:
     input:
-        unmap_r1 = expand("{fold}mapping/unmapped/{name}_{build}.unmapped_R1.fasta", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME),
-        unmap_r2 = expand("{fold}mapping/unmapped/{name}_{build}.unmapped_R2.fasta", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME),
+        report = expand("{fold}kraken_report.k2report", fold = OUTPUT_FOLD),
+        out = expand("{fold}kraken_output.kraken2", fold = OUTPUT_FOLD),
         metrics = expand("{fold}mapping/unmapped/metrics.txt", fold = OUTPUT_FOLD),
         covfiles = get_covfiles,
         svgfiles = get_svgfiles,
@@ -129,7 +129,7 @@ rule build_library:
     shell:
         """
         echo "building bowtie library..."
-        bowtie2-build -q {params.fa_fold}* {params.output_fold}{params.index_name}
+        bowtie2-build -q {params.fa_fold}*.fa {params.output_fold}{params.index_name}
         """
     
 
@@ -197,6 +197,22 @@ rule print_unmapped:
         echo "** Number of unmapped reads (mate - to *2)" >> {output.metrics}
         wc -l {input.unmap} >> {output.metrics}
         """
+
+# run unmapped reads through Kraken2
+rule kraken_unmapped:
+    input:
+        unmap_r1 = expand("{fold}mapping/unmapped/{name}_{build}.unmapped_R1.fasta", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME),
+        unmap_r2 = expand("{fold}mapping/unmapped/{name}_{build}.unmapped_R2.fasta", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME)
+    output:
+        report = expand("{fold}kraken_report.k2report", fold = OUTPUT_FOLD),
+        out = expand("{fold}kraken_output.kraken2", fold = OUTPUT_FOLD)
+    conda:
+        "kraken2.yml"
+    shell:
+        """
+        kraken2 --db /mnt/beegfs/etempez/remapping/kraken_libraries/k2protocol_db --threads 8 --report {output.report} --report-minimizer-data --paired {input.unmap_r1} {input.unmap_r2} > {output.out}
+        """
+
 
 ## Analysis per species
 # extract all species present in sam file and put them in txt file
@@ -438,7 +454,6 @@ rule global_metrics:
         glob_metrics = expand("{fold}mapping/global_metrics.txt", fold = OUTPUT_FOLD)
     shell:
         """
-
         
         
         
