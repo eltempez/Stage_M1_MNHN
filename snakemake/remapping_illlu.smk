@@ -81,10 +81,9 @@ rule all:
     input:
         report = expand("{fold}kraken_report.k2report", fold = OUTPUT_FOLD),
         out = expand("{fold}kraken_output.kraken2", fold = OUTPUT_FOLD),
-        metrics = expand("{fold}mapping/unmapped/metrics.txt", fold = OUTPUT_FOLD),
         covfiles = get_covfiles,
         svgfiles = get_svgfiles,
-        metrics_sp = get_metrics_files
+        glob_metrics = expand("{fold}mapping/global_metrics.txt", fold = OUTPUT_FOLD)
 
 
 ## setup
@@ -192,10 +191,15 @@ rule print_unmapped:
         unmap = expand("{fold}mapping/unmapped/{name}_{build}.unmapped.txt", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME)
     output:
         metrics = expand("{fold}mapping/unmapped/metrics.txt", fold = OUTPUT_FOLD)
+    params:
+        read_lg = READ_LG
     shell:
         """
-        echo "** Number of unmapped reads (mate - to *2)" >> {output.metrics}
-        wc -l {input.unmap} >> {output.metrics}
+        echo -e "library\tNumber mates\tNumber reads\tNumber mapped nt" > {output.metrics}
+        # number of lines
+        LG=$(wc -l {input.unmap} | awk -F " " '{{print $1}}')
+        # write data
+        echo -e "unmapped\t$(expr $LG / 2)\t$LG\t$(expr $LG \* {params.read_lg})" >> {output.metrics}
         """
 
 # run unmapped reads through Kraken2
@@ -326,17 +330,13 @@ checkpoint metrics_per_species:
             CONCORD_R1={params.folder}mapping/mapped/concord_r/{params.name}_{params.build}_concSH_${{sp}}_R1.fastq
             METRIC={params.folder}mapping/mapped/metrics/${{sp}}_metrics.txt
 
-            # add infos to metrics file
-            echo -e "Library\t$sp" > $METRIC
-            # number of lines in fastq file
+            echo -e "library\tNumber mates\tNumber reads\tNumber mapped nt" > $METRIC
+            # number of lines
             LG=$(wc -l $CONCORD_R1 | awk -F " " '{{print $1}}')
-            # number of mates = number of lines in R1 fastq file / 4 (since one read takes 4 lines)
-            echo -e "Number mates\t$(expr $LG / 4)" >> $METRIC
             # number of reads
             READS=$(expr $LG / 2)
-            echo -e "Number reads\t$READS" >> $METRIC
-            # number of nt
-            echo -e "Number mapped nt\t$(expr $READS \* {params.read_lg})" >> $METRIC
+            # write data
+            echo -e "$sp\t$(expr $LG / 2)\t$READS\t$(expr $READS \* {params.read_lg})" >> $METRIC
         done
         """
 
@@ -448,15 +448,35 @@ checkpoint remapping:
 
 rule global_metrics:
     input:
+        r1 = R1,
+        species_file = SPECIES_LST,
         metrics_unmapped = expand("{fold}mapping/unmapped/metrics.txt", fold = OUTPUT_FOLD),
         metrics_mapped = get_metrics_files
     output:
         glob_metrics = expand("{fold}mapping/global_metrics.txt", fold = OUTPUT_FOLD)
+    params: 
+        name = R1_NAME, 
+        build = BUILD_NAME,
+        folder = OUTPUT_FOLD,
+        read_lg = READ_LG
     shell:
         """
-        
-        
-        
+        # print number of reads at the beginning of file
+        MATES=$(zcat {input.r1} | echo $((`wc -l`/4)))
+        echo $(expr $MATES \* 2) > {output.glob_metrics}
+        # copy unmapped metrics file
+        cat {input.metrics_unmapped} >> {output.glob_metrics}
+        species=$(cat {input.species_file})
+        # for each species
+        for sp in $species; do
+            # filename
+            METRIC={params.folder}mapping/mapped/metrics/${{sp}}_metrics.txt
+            # get the second line
+            data=$(sed -n '2p' "$METRIC")
+            # add it to the global file
+            echo -e "$data" >> {output.glob_metrics}
+        done
         """
+    
     
 
