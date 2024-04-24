@@ -5,7 +5,7 @@ library(gridExtra)
 library(ggpattern)
 
 # Récupération des données
-data <- read.table("./test_kraken_bowtie/results.txt", header = TRUE, dec = ".", sep = " ")
+data <- read.table("./test_kraken_bowtie/results.txt", header = TRUE, dec = ".")
 program <- c(rep("kr", 6), rep("bt_kr", 6))
 database <- rep(c(rep("lu", 2), rep("standard", 2), rep("kefir", 2)), 2)
 ech <- rep(c("mcf", "kA"), 6)
@@ -28,7 +28,7 @@ ggplot(reads_long, aes(x = database, y = percents, fill = factor(mapped, c("p_un
   facet_grid(ech ~ program, labeller = label_both) +
   labs(x = "Library", y = "% of reads", fill = "Mapped") +
   scale_fill_manual(values=c('#868686', '#894c9f', '#4c799f'), 
-                    name = "", labels = c("unmapped", "bowtie", "kraken"))
+                    name = "", labels = c("unmapped", "kraken", "bowtie"))
 
 
 ########################################
