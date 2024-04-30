@@ -5,6 +5,12 @@ for ((i=25; i<=40; i+=5))
 do
     l=$(($i - 4))
     sp=$(($l / 4 - 1))
+    if [$l -gt 31 ]; then
+        $l=31
+    fi
+    if [$sp -gt 7 ]; then
+        $sp=7
+    fi
     echo $i
     # données taxonomie
     /home/eliotttempez/Documents/tests/kraken_kmers/kraken2-master/kraken2-build --download-taxonomy --db /home/eliotttempez/Documents/tests/kraken_kmers/kefir_library
@@ -18,4 +24,6 @@ do
 
     # alignement
     /home/eliotttempez/Documents/tests/kraken_kmers/kraken2-master/kraken2 --db /home/eliotttempez/Documents/tests/kraken_kmers/kefir_library --threads 8 --paired /home/eliotttempez/Documents/donnees/DATAS_cinétique_MCF/Cinétique_illumina_MCF/NG-32390_MCF_10h_lib666597_10174_2_1.fastq.gz /home/eliotttempez/Documents/donnees/DATAS_cinétique_MCF/Cinétique_illumina_MCF/NG-32390_MCF_10h_lib666597_10174_2_2.fastq.gz > /home/eliotttempez/Documents/tests/kraken_kmers/kraken_output_${i}_kmers.txt
+
+    rm -rf /home/eliotttempez/Documents/tests/kraken_kmers/kefir_library
 done
