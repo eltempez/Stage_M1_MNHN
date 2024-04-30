@@ -6,7 +6,6 @@
 ## Import modules
 import os
 import re
-import importlib
 
 ## Functions
 # get the prefix of a file name 
@@ -40,6 +39,14 @@ def get_ncbi_id_metagenome():
                 dict_ncbi[line_split[0]] = int(line_split[1])
     return dict_ncbi
 
+# format metagenome dict to use in bash
+def bash_dict(dict):
+    printed_dict = ""
+    for key, val in dict.items():
+        printed_dict += f"['{key}']={val} "
+    return printed_dict[:-1]
+
+
 ## Filenames
 # inputs
 KRAKEN_LIB = check_slash(config["kraken_library"])
@@ -69,28 +76,36 @@ ALL_SPECIES = FASTA_SPECIES + FA_SPECIES
 # from rule extract_concordants
 def get_concord_files(wildcards):
     checkpoint_output = checkpoints.extract_concordants.get(**wildcards).output[0]
-    return expand("{fold}mapped/concord/{i}.txt", fold = OUTPUT_FOLD, i = glob_wildcards(os.path.join(checkpoint_output, "{i}.txt")).i)
+    return expand("{fold}mapped/aligned/{i}.txt", fold = OUTPUT_FOLD, i = glob_wildcards(os.path.join(checkpoint_output, "{i}.txt")).i)
 
-# from rule sort_concordants
-def get_concordR_files(wildcards):
-    checkpoint_output = checkpoints.sort_concordants.get(**wildcards).output[0]
-    return expand("{fold}mapped/concord_r/{i}.fastq", fold = OUTPUT_FOLD, i = glob_wildcards(os.path.join(checkpoint_output, "{i}.fastq")).i)
+# from rule extract_concordants
+def get_concordseq_files(wildcards):
+    checkpoint_output = checkpoints.extract_concordants.get(**wildcards).output[0]
+    return expand("{fold}mapped/aligned/{i}.fastq", fold = OUTPUT_FOLD, i = glob_wildcards(os.path.join(checkpoint_output, "{i}.fastq")).i)
 
 # from rule extract_aligned
 def get_aligned_files(wildcards):
     checkpoint_output = checkpoints.extract_aligned.get(**wildcards).output[0]
-    return expand("{fold}mapped/aligned/{i}.fastq", fold = OUTPUT_FOLD, i = glob_wildcards(os.path.join(checkpoint_output, "{i}.fastq")).i)
+    return expand("{fold}mapped/aligned/{i}.txt", fold = OUTPUT_FOLD, i = glob_wildcards(os.path.join(checkpoint_output, "{i}.fastq")).i)
 
-def get_aligned_files_txt(wildcards):
+def get_alignedseq_files(wildcards):
     checkpoint_output = checkpoints.extract_aligned.get(**wildcards).output[0]
-    return expand("{fold}mapped/aligned/{i}.txt", fold = OUTPUT_FOLD, i = glob_wildcards(os.path.join(checkpoint_output, "{i}.txt")).i)
+    return expand("{fold}mapped/aligned/{i}.fastq", fold = OUTPUT_FOLD, i = glob_wildcards(os.path.join(checkpoint_output, "{i}.txt")).i)
 
 # chose file based on paired or unpaired
-def input_setup_remapping():
+def get_txt_from_mapping():
     if is_paired:
         return get_concord_files
     else:
-        return get_aligned_files_txt
+        return get_aligned_files
+
+def get_fastq_from_mapping():
+    if is_paired:
+        return get_concordseq_files
+    else:
+        return get_alignedseq_files
+
+
 
 # from rule metrics_per_species
 def get_metrics_files(wildcards):
@@ -134,8 +149,7 @@ if config["use_bowtie"]:
 elif not config["use_bowtie"]:
     rule all:
         input:
-            fa_files = expand("{fold}genome_data/fa/{species}.fa", fold = OUTPUT_FOLD, species = ALL_SPECIES),
-            dir = directory(OUTPUT_FOLD + "genome_data/kraken_kefir_library")
+            get_concordseq_files
 
 
 
@@ -239,7 +253,256 @@ if config["use_bowtie"]:
                 echo "mapping against metagenome..."
                 bowtie2 -p 10 -x {params.idx} -U {input.r1} -S {output.sam}
                 """
+
+
+    ## Analysis per species
+    # extract all species present in sam file and put them in txt file
+    rule extract_species:
+        input:
+            sam = expand("{fold}{name}_{build}.sam", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME)
+        output:
+            species_file = temp(SPECIES_LST)
+        envmodules:
+            "biology",
+            "samtools"
+        shell: 
+            """
+            echo "extracting species..."
+            samtools view -H {input.sam} | awk -F "\t" '{{split($2,a,":"); split(a[2],b,"_"); if (a[1] == "SN") print b[1]}}' | sort -u > {output.species_file}
+            """
+    
+    if is_paired:
+        # for each species : read concordants and put all of their id in a txt file, then sort concordants in fastq files depending on R1 and R2 
+        checkpoint extract_concordants:
+            input: 
+                r1 = R1,
+                r2 = R2,
+                species_file = SPECIES_LST,
+                sam = expand("{fold}{name}_{build}.sam", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME)
+            output:
+                directory(OUTPUT_FOLD + "mapped/aligned/"),
+            envmodules:
+                "biology",
+                "samtools"
+            conda:
+                CONFIG_FOLDER + "seqtk.yml"
+            params: 
+                name = R1_NAME, 
+                build = BUILD_NAME,
+                folder = OUTPUT_FOLD
+            shell:
+                """
+                mkdir -p {output[0]}
+                species=$(cat {input.species_file})
+                echo "looking for concordants..."
+                # for each species
+                for sp in $species; do
+                    echo $sp
+
+                    # filename
+                    CONCORD={params.folder}mapped/aligned/{params.name}_{params.build}_concSH_${{sp}}.txt
+                    CONCORD_R1={params.folder}mapped/aligned/{params.name}_{params.build}_concSH_${{sp}}_R1.fastq
+                    CONCORD_R2={params.folder}mapped/aligned/{params.name}_{params.build}_concSH_${{sp}}_R2.fastq
+
+                    # if species name present in line, prints line in temporary out file
+                    awk -F "\t" -v s="${{sp}}" '{{split($2,b,":"); split(b[2],c,"_"); split($3,a,"_");
+                    if ((a[1]==s) || ((b[1] == "SN") && (c[1] == s))) print $0}}' {input.sam} > {params.folder}out
+
+                    # reads concordants from out file
+                    samtools view -F 4 --verbosity 2 {params.folder}out | awk -F "\t" '{{print $1}}' | sort | uniq -c | awk -F " " '{{if ($1 == "2") print $2}}' > $CONCORD
+
+                    # remove temporary file
+                    rm {params.folder}out
+
+                    # divide concordants into R1 and R2
+                    seqtk subseq {input.r1} $CONCORD > $CONCORD_R1
+                    seqtk subseq {input.r2} $CONCORD > $CONCORD_R2
+                done
+                """
+
+    # for each species : read aligned and put all of their id in a txt file, then sort aligned reads in fastq file
+    else:
+        checkpoint extract_aligned:
+            input:
+                species_file = SPECIES_LST,
+                sam = expand("{fold}{name}_{build}.sam", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME),
+                r1 = R1
+            output:
+                directory(OUTPUT_FOLD + "mapped/aligned/")
+            params: 
+                name = R1_NAME, 
+                build = BUILD_NAME,
+                folder = OUTPUT_FOLD
+            envmodules:
+                "biology",
+                "samtools"
+            conda:
+                CONFIG_FOLDER + "seqtk.yml"
+            shell:
+                """
+                mkdir -p {output[0]}
+                species=$(cat {input.species_file})
+                echo "sorting aligned reads..."
+                # for each species
+                for sp in $species; do
+                    echo $sp
+
+                    # filenames
+                    ALIGNED={params.folder}mapped/aligned/{params.name}_{params.build}_concSH_${{sp}}.txt
+                    ALIGNED_SEQ={params.folder}mapped/aligned/{params.name}_{params.build}_concSH_${{sp}}.fastq
+
+                    # if species name present in line, prints line in temporary out file
+                    awk -F "\t" -v s="${{sp}}" '{{split($2,b,":"); split(b[2],c,"_"); split($3,a,"_");
+                    if ((a[1]==s) || ((b[1] == "SN") && (c[1] == s))) print $0}}' {input.sam} > {params.folder}out
+
+                    # reads all reads from temporary out file
+                    samtools view -F 4 --verbosity 2 {params.folder}out | awk -F "\t" '{{print $1}}' | sort > $ALIGNED
+                    # remove temporary file
+                    rm {params.folder}out
+
+                    # extract sequences
+                    seqtk subseq {input.r1} $ALIGNED > $ALIGNED_SEQ
+                done
+                """
+
+    # create metrics file for each species
+    checkpoint metrics_per_species:
+        input:
+            species_file = SPECIES_LST,
+            fastq = get_fastq_from_mapping()
+        output:
+            directory(OUTPUT_FOLD + "mapped/metrics/")
+        params: 
+            name = R1_NAME, 
+            build = BUILD_NAME,
+            folder = OUTPUT_FOLD,
+            read_lg = READ_LG
+        shell:
+            """
+            echo "calculating metrics per species..."
+            mkdir -p {output[0]}
+            species=$(cat {input.species_file})
+            # for each species
+            for sp in $species; do
+                    
+                # filenames
+                CONCORD_R1={params.folder}mapped/aligned/{params.name}_{params.build}_concSH_${{sp}}_R1.fastq
+                METRIC={params.folder}mapped/metrics/${{sp}}_metrics.txt
+
+                echo -e "library\tNumber reads\tNumber mapped nt" > $METRIC
+                # number of lines
+                LG=$(wc -l $CONCORD_R1 | awk -F " " '{{print $1}}')
+                # number of reads
+                READS=$(expr $LG / 2)
+                # write data
+                echo -e "$sp\t$READS\t$(expr $READS \* {params.read_lg})" >> $METRIC
+                done
+                """
+
+    # for each species: remapping on reference genome
+    # create .bam files
+    checkpoint setup_remapping:
+        input:
+            species_file = SPECIES_LST,
+            sam = expand("{fold}{name}_{build}.sam", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME),
+            concord = get_txt_from_mapping()
+        output:
+            directory(OUTPUT_FOLD + "mapped/bam/")
+        params: 
+            name = R1_NAME, 
+            build = BUILD_NAME,
+            folder = OUTPUT_FOLD
+        envmodules:
+            "userspace",
+            "biology",
+            "java-JDK-OpenJDK/11.0.9",
+            "picard",
+            "samtools"
+        shell:
+            """
+            mkdir -p {output[0]}
+            species=$(cat {input.species_file})
+            echo "setting up for remapping..."
+            # for each species
+            for sp in $species; do
+                echo $sp
+
+                # filenames
+                CONCORD={params.folder}mapped/aligned/{params.name}_{params.build}_concSH_${{sp}}.txt
+                REMAP_BAM={params.folder}mapped/bam/{params.name}_{params.build}_concSH_${{sp}}.bam
+
+                # filter original sam with concordant reads only for the current species (save in temporaty file)
+                java -jar $PICARD FilterSamReads --VERBOSITY ERROR --QUIET true -I {input.sam} -O {params.folder}int.sam -FILTER includeReadList -READ_LIST_FILE $CONCORD 2> {output.fold}log.txt
                 
+                # keep only headers with contigs regarding the current species (save in temporaty file)
+                awk -F "\t" -v s="$sp" '{{split($2, a, ":"); split(a[2],b,"_"); if ((a[1] == "SN") && (b[1] == s)) print $0; else if (a[1] != "SN") print $0}}' {params.folder}int.sam > {params.folder}int2.sam
+                # sort and save in bam file
+                samtools view -b {params.folder}int2.sam | samtools sort > $REMAP_BAM;
+                # delete temporary files
+                rm {params.folder}int.sam {params.folder}int2.sam
+                # index bam file
+                samtools index $REMAP_BAM
+            done
+            """
+
+    # creation of genome reference data + coverage data
+    checkpoint remapping:
+        input:
+            species_file = SPECIES_LST,
+            fa_files = expand("{fold}genome_data/fa/{species}.fa", fold = OUTPUT_FOLD, species = ALL_SPECIES),
+            remap_bam = get_bam_files
+        output:
+            directory(OUTPUT_FOLD + "mapped/coverage/")
+        envmodules:
+            "userspace",
+            "biology",
+            "java-JDK-OpenJDK/11.0.9",
+            "picard",
+            "samtools"
+        conda:
+            CONFIG_FOLDER + "jvarkit.yml"
+        params: 
+            name = R1_NAME, 
+            build = BUILD_NAME,
+            folder = OUTPUT_FOLD,
+            species_folder = OUTPUT_FOLD + "genome_data/fa/"
+        shell:
+            """
+            mkdir -p {output[0]}
+            species=$(cat {input.species_file})
+            echo "calculating coverage..."
+            # for each species
+            for sp in $species; do
+                echo $sp
+
+                # filenames
+                REMAP_BAM={params.folder}mapped/bam/{params.name}_{params.build}_concSH_${{sp}}.bam
+                GENOME={params.species_folder}${{sp}}.fa
+                COVFILE={params.folder}mapped/coverage/{params.name}_{params.build}_concSH_${{sp}}.coverage
+                COVIMG={params.folder}mapped/coverage/{params.name}_{params.build}_concSH_${{sp}}.svg
+
+                # create reference genome data (.fa.fai file)
+                samtools faidx $GENOME
+                # create .fa.bed file
+                awk 'BEGIN {{FS="\t"}} {{print $1 FS "0" FS $2}}' $GENOME.fai > $GENOME.bed
+                # calculate coverage statistics
+                jvarkit bamstats04 -B $GENOME.bed $REMAP_BAM > $COVFILE 2> {output.fold}log.txt
+                # calculate median
+                MEDCOV=$(cat $COVFILE | sed '1d' | awk -F "\t" '{{print $9}}'| sort -k 1n,1 | tail -n1| cut -d "." -f 1)
+                # if median = 0, median = 5
+                if  [ $MEDCOV -eq 0 ]
+                then
+                MEDCOV=5
+                fi
+                # calculate parameters
+                RATIO=$((MEDCOV * 30 / 100))
+                MEDGRAPH=$(($MEDCOV + $RATIO))
+                # create graph
+                java -jar $PICARD CreateSequenceDictionary -VERBOSITY ERROR -QUIET true -R $GENOME -O $GENOME.dict 2> {output.fold}log.txt
+                jvarkit wgscoverageplotter -C $MEDGRAPH -R $GENOME $REMAP_BAM -o $COVIMG 2> {output.fold}log.txt
+            done
+            """
+
 
     ## rescue of unmapped reads
     # get all unmapped reads
@@ -302,11 +565,11 @@ if config["use_bowtie"]:
             shell:
                 """
                 echo "calculating metrics of unmapped reads..."
-                echo -e "library\tNumber mates\tNumber reads\tNumber mapped nt" > {output.metrics}
+                echo -e "library\tNumber reads\tNumber mapped nt" > {output.metrics}
                 # number of lines
                 LG=$(wc -l {input.unmap} | awk -F " " '{{print $1}}')
                 # write data
-                echo -e "unmapped\t$(expr $LG / 2)\t$LG\t$(expr $LG \* {params.read_lg})" >> {output.metrics}
+                echo -e "unmapped\t$LG\t$(expr $LG \* {params.read_lg})" >> {output.metrics}
                 """
     else:
         rule print_unmapped:
@@ -362,325 +625,7 @@ if config["use_bowtie"]:
                 """
                 
 
-
-    ## Analysis per species
-    # extract all species present in sam file and put them in txt file
-    rule extract_species:
-        input:
-            sam = expand("{fold}{name}_{build}.sam", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME)
-        output:
-            species_file = temp(SPECIES_LST)
-        envmodules:
-            "biology",
-            "samtools"
-        shell: 
-            """
-            echo "extracting species..."
-            samtools view -H {input.sam} | awk -F "\t" '{{split($2,a,":"); split(a[2],b,"_"); if (a[1] == "SN") print b[1]}}' | sort -u > {output.species_file}
-            """
-    
-    if is_paired:
-        # for each species : read concordants and put all of their id in a txt file
-        checkpoint extract_concordants:
-            input: 
-                species_file = SPECIES_LST,
-                sam = expand("{fold}{name}_{build}.sam", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME)
-            output:
-                directory(OUTPUT_FOLD + "mapped/concord/"),
-            envmodules:
-                "biology",
-                "samtools"
-            params: 
-                name = R1_NAME, 
-                build = BUILD_NAME,
-                folder = OUTPUT_FOLD
-            shell:
-                """
-                mkdir -p {output[0]}
-                species=$(cat {input.species_file})
-                echo "looking for concordants..."
-                # for each species
-                for sp in $species; do
-                    echo $sp
-
-                    # filename
-                    CONCORD={params.folder}mapped/concord/{params.name}_{params.build}_concSH_${{sp}}.txt
-
-                    # if species name present in line, prints line in temporary out file
-                    awk -F "\t" -v s="${{sp}}" '{{split($2,b,":"); split(b[2],c,"_"); split($3,a,"_");
-                    if ((a[1]==s) || ((b[1] == "SN") && (c[1] == s))) print $0}}' {input.sam} > {params.folder}out
-
-                    # reads concordants from out file
-                    samtools view -F 4 --verbosity 2 {params.folder}out | awk -F "\t" '{{print $1}}' | sort | uniq -c | awk -F " " '{{if ($1 == "2") print $2}}' > $CONCORD
-
-                    # remove temporary file
-                    rm {params.folder}out
-                done
-                """
-
-        # for each species : sort concordants in fastq files depending on R1 and R2 
-        checkpoint sort_concordants:
-            input:
-                get_concord_files,
-                species_file = SPECIES_LST,
-                r1 = R1,
-                r2 = R2
-            output:
-                directory(OUTPUT_FOLD + "mapped/concord_r/")
-            conda:
-                CONFIG_FOLDER + "seqtk.yml"
-            params: 
-                name = R1_NAME, 
-                build = BUILD_NAME,
-                folder = OUTPUT_FOLD
-            shell:
-                """
-                mkdir -p {output[0]}
-                species=$(cat {input.species_file})
-                echo "sorting concordants..."
-                # for each species
-                for sp in $species; do
-                    echo $sp
-
-                    # filenames
-                    CONCORD={params.folder}mapped/concord/{params.name}_{params.build}_concSH_${{sp}}.txt
-                    CONCORD_R1={params.folder}mapped/concord_r/{params.name}_{params.build}_concSH_${{sp}}_R1.fastq
-                    CONCORD_R2={params.folder}mapped/concord_r/{params.name}_{params.build}_concSH_${{sp}}_R2.fastq
-
-                    # divide concordants into R1 and R2
-                    seqtk subseq {input.r1} $CONCORD > $CONCORD_R1
-                    seqtk subseq {input.r2} $CONCORD > $CONCORD_R2
-                done
-                """
-
-    
-    else:
-        # get all aligned reads, put their ids in a txt file and sequances in fastq file
-        checkpoint extract_aligned:
-            input:
-                species_file = SPECIES_LST,
-                sam = expand("{fold}{name}_{build}.sam", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME),
-                r1 = R1
-            output:
-                directory(OUTPUT_FOLD + "mapped/aligned/")
-            params: 
-                name = R1_NAME, 
-                build = BUILD_NAME,
-                folder = OUTPUT_FOLD
-            envmodules:
-                "biology",
-                "samtools"
-            conda:
-                CONFIG_FOLDER + "seqtk.yml"
-            shell:
-                """
-                mkdir -p {output[0]}
-                species=$(cat {input.species_file})
-                echo "sorting aligned reads..."
-                # for each species
-                for sp in $species; do
-                    echo $sp
-
-                    # filenames
-                    ALIGNED={params.folder}mapped/aligned/{params.name}_{params.build}_concSH_${{sp}}.txt
-                    ALIGNED_SEQ={params.folder}mapped/aligned/{params.name}_{params.build}_concSH_${{sp}}.fastq
-
-                    # if species name present in line, prints line in temporary out file
-                    awk -F "\t" -v s="${{sp}}" '{{split($2,b,":"); split(b[2],c,"_"); split($3,a,"_");
-                    if ((a[1]==s) || ((b[1] == "SN") && (c[1] == s))) print $0}}' {input.sam} > {params.folder}out
-
-                    # reads all reads from temporary out file
-                    samtools view -F 4 --verbosity 2 {params.folder}out | awk -F "\t" '{{print $1}}' | sort > $ALIGNED
-                    # remove temporary file
-                    rm {params.folder}out
-
-                    # extract sequances
-                    seqtk subseq {input.r1} $ALIGNED > $ALIGNED_SEQ
-                done
-                """
-
-                
-
-    # create metrics file for each species
-    if is_paired:
-        checkpoint metrics_per_species:
-            input:
-                species_file = SPECIES_LST,
-                concord_r = get_concordR_files
-            output:
-                directory(OUTPUT_FOLD + "mapped/metrics/")
-            params: 
-                name = R1_NAME, 
-                build = BUILD_NAME,
-                folder = OUTPUT_FOLD,
-                read_lg = READ_LG
-            shell:
-                """
-                echo "calculating metrics per species..."
-                mkdir -p {output[0]}
-                species=$(cat {input.species_file})
-                # for each species
-                for sp in $species; do
-                    
-                    # filenames
-                    CONCORD_R1={params.folder}mapped/concord_r/{params.name}_{params.build}_concSH_${{sp}}_R1.fastq
-                    METRIC={params.folder}mapped/metrics/${{sp}}_metrics.txt
-
-                    echo -e "library\tNumber mates\tNumber reads\tNumber mapped nt" > $METRIC
-                    # number of lines
-                    LG=$(wc -l $CONCORD_R1 | awk -F " " '{{print $1}}')
-                    # number of reads
-                    READS=$(expr $LG / 2)
-                    # write data
-                    echo -e "$sp\t$(expr $LG / 2)\t$READS\t$(expr $READS \* {params.read_lg})" >> $METRIC
-                done
-                """
-    else:
-        checkpoint metrics_per_species:
-            input:
-                species_file = SPECIES_LST,
-                aligned = get_aligned_files
-            output:
-                directory(OUTPUT_FOLD + "mapped/metrics/")
-            params: 
-                name = R1_NAME, 
-                build = BUILD_NAME,
-                folder = OUTPUT_FOLD,
-                read_lg = READ_LG
-            shell:
-                """
-                echo "calculating metrics per species..."
-                mkdir -p {output[0]}
-                species=$(cat {input.species_file})
-                # for each species
-                for sp in $species; do
-                    
-                    # filenames
-                    ALIGNED_SEQ={params.folder}mapped/aligned/{params.name}_{params.build}_concSH_${{sp}}.fastq
-                    METRIC={params.folder}mapped/metrics/${{sp}}_metrics.txt
-
-                    echo -e "library\tNumber reads\tNumber mapped nt" > $METRIC
-                    # number of lines
-                    LG=$(wc -l $ALIGNED_SEQ | awk -F " " '{{print $1}}')
-                    # number of reads
-                    READS=$(expr $LG / 2)
-                    # write data
-                    echo -e "$sp\t$READS\t$(expr $READS \* {params.read_lg})" >> $METRIC
-                done
-                """
-
-
-    # for each species: remapping on reference genome
-    # create .bam files
-    checkpoint setup_remapping:
-        input:
-            species_file = SPECIES_LST,
-            sam = expand("{fold}{name}_{build}.sam", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME),
-            concord = input_setup_remapping()
-        output:
-            directory(OUTPUT_FOLD + "mapped/bam/")
-        params: 
-            name = R1_NAME, 
-            build = BUILD_NAME,
-            folder = OUTPUT_FOLD,
-            is_paired = int(is_paired)
-        envmodules:
-            "userspace",
-            "biology",
-            "java-JDK-OpenJDK/11.0.9",
-            "picard",
-            "samtools"
-        shell:
-            """
-            mkdir -p {output[0]}
-            species=$(cat {input.species_file})
-            echo "setting up for remapping..."
-            # for each species
-            for sp in $species; do
-                echo $sp
-
-                # filenames
-                CONCORD={params.folder}mapped/concord/{params.name}_{params.build}_concSH_${{sp}}.txt
-                ALIGNED={params.folder}mapped/aligned/{params.name}_{params.build}_concSH_${{sp}}.txt
-                REMAP_BAM={params.folder}mapped/bam/{params.name}_{params.build}_concSH_${{sp}}.bam
-
-                # filter original sam with concordant reads only for the current species (save in temporaty file)
-                if [ {params.is_paired} -eq 1 ]; then
-                    java -jar $PICARD FilterSamReads --VERBOSITY ERROR --QUIET true -I {input.sam} -O {params.folder}int.sam -FILTER includeReadList -READ_LIST_FILE $CONCORD
-                else 
-                    java -jar $PICARD FilterSamReads --VERBOSITY ERROR --QUIET true -I {input.sam} -O {params.folder}int.sam -FILTER includeReadList -READ_LIST_FILE $ALIGNED
-                fi
-                # keep only headers with contigs regarding the current species (save in temporaty file)
-                awk -F "\t" -v s="$sp" '{{split($2, a, ":"); split(a[2],b,"_"); if ((a[1] == "SN") && (b[1] == s)) print $0; else if (a[1] != "SN") print $0}}' {params.folder}int.sam > {params.folder}int2.sam
-                # sort and save in bam file
-                samtools view -b {params.folder}int2.sam | samtools sort > $REMAP_BAM;
-                # delete temporary files
-                rm {params.folder}int.sam {params.folder}int2.sam
-                # index bam file
-                samtools index $REMAP_BAM
-            done
-            """
-
-
-
-    # creation of genome reference data
-    checkpoint remapping:
-        input:
-            species_file = SPECIES_LST,
-            fa_files = expand("{fold}genome_data/fa/{species}.fa", fold = OUTPUT_FOLD, species = ALL_SPECIES),
-            remap_bam = get_bam_files
-        output:
-            directory(OUTPUT_FOLD + "mapped/coverage/")
-        envmodules:
-            "userspace",
-            "biology",
-            "java-JDK-OpenJDK/11.0.9",
-            "picard",
-            "samtools"
-        conda:
-            CONFIG_FOLDER + "jvarkit.yml"
-        params: 
-            name = R1_NAME, 
-            build = BUILD_NAME,
-            folder = OUTPUT_FOLD,
-            species_folder = OUTPUT_FOLD + "genome_data/fa/"
-        shell:
-            """
-            mkdir -p {output[0]}
-            species=$(cat {input.species_file})
-            echo "calculating coverage..."
-            # for each species
-            for sp in $species; do
-                echo $sp
-
-                # filenames
-                REMAP_BAM={params.folder}mapped/bam/{params.name}_{params.build}_concSH_${{sp}}.bam
-                GENOME={params.species_folder}${{sp}}.fa
-                COVFILE={params.folder}mapped/coverage/{params.name}_{params.build}_concSH_${{sp}}.coverage
-                COVIMG={params.folder}mapped/coverage/{params.name}_{params.build}_concSH_${{sp}}.svg
-
-                # create reference genome data (.fa.fai file)
-                samtools faidx $GENOME
-                # create .fa.bed file
-                awk 'BEGIN {{FS="\t"}} {{print $1 FS "0" FS $2}}' $GENOME.fai > $GENOME.bed
-                # calculate coverage statistics
-                jvarkit bamstats04 -B $GENOME.bed $REMAP_BAM > $COVFILE
-                # calculate median
-                MEDCOV=$(cat $COVFILE | sed '1d' | awk -F "\t" '{{print $9}}'| sort -k 1n,1 | tail -n1| cut -d "." -f 1)
-                # if median = 0, median = 5
-                if  [ $MEDCOV -eq 0 ]
-                then
-                MEDCOV=5
-                fi
-                # calculate parameters
-                RATIO=$((MEDCOV * 30 / 100))
-                MEDGRAPH=$(($MEDCOV + $RATIO))
-                # create graph
-                java -jar $PICARD CreateSequenceDictionary -VERBOSITY ERROR -QUIET true -R $GENOME -O $GENOME.dict 
-                jvarkit wgscoverageplotter -C $MEDGRAPH -R $GENOME $REMAP_BAM -o $COVIMG
-            done
-            """
-
+    ## global metrics
     rule global_metrics:
         input:
             r1 = R1,
@@ -693,12 +638,17 @@ if config["use_bowtie"]:
             name = R1_NAME, 
             build = BUILD_NAME,
             folder = OUTPUT_FOLD,
-            read_lg = READ_LG
+            read_lg = READ_LG,
+            is_paired = int(is_paired)
         shell:
             """
             # print number of reads at the beginning of file
-            MATES=$(zcat {input.r1} | echo $((`wc -l`/4)))
-            echo $(expr $MATES \* 2) > {output.glob_metrics}
+            READS_R1=$(zcat {input.r1} | echo $((`wc -l`/4)))
+            if [ {params.is_paired -eq 1} ]; then
+                echo $(expr $READS_R1 \* 2) > {output.glob_metrics}
+            else
+                echo $READS_R1 > {output.glob_metrics}
+            fi
             # copy unmapped metrics file
             cat {input.metrics_unmapped} >> {output.glob_metrics}
             species=$(cat {input.species_file})
@@ -719,6 +669,7 @@ if config["use_bowtie"]:
 ########## IF KRAKEN2 ##########
 ################################
 elif not config["use_bowtie"]:
+    # build kraken2 library
     checkpoint build_kraken_library:
         input:
             fa_files = expand("{fold}genome_data/fa/{species}.fa", fold = OUTPUT_FOLD, species = ALL_SPECIES)
@@ -737,9 +688,164 @@ elif not config["use_bowtie"]:
             kraken2-build --build --db {output}
             """
 
+    # align reads with kraken library + rescue unmapped reads
+    if is_paired:
+        rule kraken_alignment:
+            input:
+                r1 = R1,
+                r2 = R2,
+                kefir_library = get_kraken_library
+            params:
+                kefir_library = directory(OUTPUT_FOLD + "genome_data/kraken_kefir_library")
+            conda:
+                CONFIG_FOLDER + "kraken2.yml"
+            output:
+                report = expand("{fold}mapped/kraken_report.k2report", fold = OUTPUT_FOLD),
+                out = expand("{fold}mapped/kraken_output.kraken2", fold = OUTPUT_FOLD),
+                unmap_r1 = expand("{fold}unmapped/{name}_{build}.unmapped_R1.fasta", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME),
+                unmap_r2 = expand("{fold}unmapped/{name}_{build}.unmapped_R2.fasta", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME)
+            params:
+                name = R1_NAME, 
+                build = BUILD_NAME,
+                folder = OUTPUT_FOLD
+            shell:
+                """
+                UNMAP={params.folder}unmapped/{params.name}_{params.build}_#.fastq
+                echo "aligning with kraken2..."
+                kraken2 --db {params.kefir_library} --threads 8 --report {output.report} --report-minimizer-data --paired --unclassified-out $UNMAP {input.r1} {input.r2} > {output.out}
+                """
+    
+    else:
+        rule kraken_alignment:
+            input:
+                r1 = R1,
+                kefir_library = get_kraken_library
+            params:
+                kefir_library = directory(OUTPUT_FOLD + "genome_data/kraken_kefir_library")
+            conda:
+                CONFIG_FOLDER + "kraken2.yml"
+            output:
+                report = expand("{fold}mapped/kraken_report.k2report", fold = OUTPUT_FOLD),
+                out = expand("{fold}mapped/kraken_output.kraken2", fold = OUTPUT_FOLD)
+            shell:
+                """
+                echo "aligning with kraken2..."
+                kraken2 --db {params.kefir_library} --threads 8 --report {output.report} --report-minimizer-data {input.r1} > {output.out}
+                """
 
-    rule kraken_alignment:
-         input:
+    ## Analysis per species
+    # for each species : extract concordant matches
+    if is_paired:
+        checkpoint sort_concordants:
+            input: 
+                r1 = R1,
+                r2 = R2,
+                out = expand("{fold}mapped/kraken_output.kraken2", fold = OUTPUT_FOLD)
+            output:
+                dir = directory(OUTPUT_FOLD + "mapped/aligned/"),
+                species_file = temp(SPECIES_LST)
+            envmodules:
+                "userspace",
+                "biology",
+                "python"
+            params:
+                extract_kraken_reads = CONFIG_FOLDER + "extract_kraken_reads.py",
+                name = R1_NAME, 
+                build = BUILD_NAME,
+                folder = OUTPUT_FOLD,
+                tax_dict = bash_dict(get_ncbi_id_metagenome())
+            shell:
+                """
+                mkdir -p {output.dir}
+                declare -A dict=({params.tax_dict})
+
+                echo "extracting concordants..."
+                # for each species
+                for sp in "${{!dict[@]}}"; do
+                    id="${{dict[$sp]}}"
+                    echo $sp
+
+                    # filenames
+                    CONCORD_R1={params.folder}mapped/aligned/{params.name}_{params.build}_concSH_${{sp}}_R1.fastq
+                    CONCORD_R2={params.folder}mapped/aligned/{params.name}_{params.build}_concSH_${{sp}}_R2.fastq
+
+                    # extract kraken reads
+                    {params.extract_kraken_reads} -k {input.out} -s1 {input.r1} -s2 {input.r2} -t $id --fastq-output -o $CONCORD_R1 -o2 $CONCORD_R2
+
+                    # if file not empty, add name to the species file
+                    if [ -s $CONCORD_R1 ]; then
+                        echo $sp >> {output.species_file}
+                    # if empty, delete it
+                    else
+                        rm $CONCORD_R1
+                    fi
+                done
+                """
+
+    # for each species : extract aligned matches
+    else:
+        checkpoint sort_aligned:
+            input: 
+                r1 = R1,
+                out = expand("{fold}mapped/kraken_output.kraken2", fold = OUTPUT_FOLD)
+            output:
+                dir = directory(OUTPUT_FOLD + "mapped/aligned/"),
+                species_file = temp(SPECIES_LST)
+            envmodules:
+                "userspace",
+                "biology",
+                "python"
+            params:
+                extract_kraken_reads = CONFIG_FOLDER + "extract_kraken_reads.py",
+                name = R1_NAME, 
+                build = BUILD_NAME,
+                folder = OUTPUT_FOLD,
+                tax_dict = bash_dict(get_ncbi_id_metagenome())
+            shell:
+                """
+                mkdir -p {output[0]}
+                declare -A dict=({params.tax_dict})
+
+                echo "extracting concordants..."
+                # for each species
+                for sp in "${{!dict[@]}}"; do
+                    id="${{dict[$sp]}}"
+                    echo $sp
+
+                    # filename
+                    CONCORD_R1={params.folder}mapped/aligned/{params.name}_{params.build}_concSH_${{sp}}_R1.fastq
+
+                    # extract kraken reads
+                    {params.extract_kraken_reads} -k {input.out} -s {input.r1} -t $id --fastq-output -o $CONCORD_R1
+
+                    # if file not empty, add name to the species file
+                    if [ -s $CONCORD_R1 ]; then
+                        echo $sp >> {output.species_file}
+                    # if empty, delete it
+                    else
+                        rm $CONCORD_R1
+                    fi
+                done
+                """
+
+    # extract all species present in kraken alignment and put them in txt file
+    rule extract_species:
+        input:
+            sam = expand("{fold}{name}_{build}.sam", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME)
+        output:
+            species_file = temp(SPECIES_LST)
+        envmodules:
+            "biology",
+            "samtools"
+        shell: 
+            """
+            echo "extracting species..."
+            samtools view -H {input.sam} | awk -F "\t" '{{split($2,a,":"); split(a[2],b,"_"); if (a[1] == "SN") print b[1]}}' | sort -u > {output.species_file}
+            """
+                
+
+                
+
 
 
     

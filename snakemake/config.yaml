@@ -2,7 +2,7 @@
 ### DATA TO MODIFY ###
 ######################
 ##### Input files #####
-# fastq files to analyse (put '#' in front of r2 if unpaired)
+# fastq files to analyse (leave r2 quotes empty if unpaired)
 r1: "/mnt/beegfs/etempez/remapping/cinetique_illu_test/DON_test_R1.fastq.gz"
 r2: "/mnt/beegfs/etempez/remapping/cinetique_illu_test/DON_test_R2.fastq.gz"
 # read length
