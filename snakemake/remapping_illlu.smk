@@ -86,11 +86,11 @@ def get_concordseq_files(wildcards):
 # from rule extract_aligned
 def get_aligned_files(wildcards):
     checkpoint_output = checkpoints.extract_aligned.get(**wildcards).output[0]
-    return expand("{fold}mapped/aligned/{i}.txt", fold = OUTPUT_FOLD, i = glob_wildcards(os.path.join(checkpoint_output, "{i}.fastq")).i)
+    return expand("{fold}mapped/aligned/{i}.txt", fold = OUTPUT_FOLD, i = glob_wildcards(os.path.join(checkpoint_output, "{i}.txt")).i)
 
 def get_alignedseq_files(wildcards):
     checkpoint_output = checkpoints.extract_aligned.get(**wildcards).output[0]
-    return expand("{fold}mapped/aligned/{i}.fastq", fold = OUTPUT_FOLD, i = glob_wildcards(os.path.join(checkpoint_output, "{i}.txt")).i)
+    return expand("{fold}mapped/aligned/{i}.fastq", fold = OUTPUT_FOLD, i = glob_wildcards(os.path.join(checkpoint_output, "{i}.fastq")).i)
 
 # chose file based on paired or unpaired
 def get_txt_from_mapping():
@@ -104,7 +104,6 @@ def get_fastq_from_mapping():
         return get_concordseq_files
     else:
         return get_alignedseq_files
-
 
 
 # from rule metrics_per_species
@@ -149,7 +148,7 @@ if config["use_bowtie"]:
 elif not config["use_bowtie"]:
     rule all:
         input:
-            get_concordseq_files
+            metrics = expand("{fold}global_metrics.txt", fold = OUTPUT_FOLD)
 
 
 
@@ -191,6 +190,42 @@ rule handle_contigs_fa:
                                 else:
                                     f_out.write(line)
 
+# clean illumina reads
+if is_paired:
+    rule fastq_cleaning:
+        input: 
+            r1_brut = R1,
+            r2_brut = R2
+        output:
+            R1_clean = expand("{fold}genome_data/fq_clean/{name}_clean_R1.fq.gz", fold = OUTPUT_FOLD, name = R1_NAME),
+            R2_clean = expand("{fold}genome_data/fq_clean/{name}_clean_R2.fq.gz", fold = OUTPUT_FOLD, name = R1_NAME)
+        conda:
+            CONFIG_FOLDER + "fastp.yml"
+        params:
+            folder = OUTPUT_FOLD
+        shell:
+            """
+            echo "cleaning illumina reads..."
+            fastp -i {input.r1_brut} -I {input.r2_brut} -o {output.R1_clean} -O {output.R2_clean} -j {params.folder}genome_data/fq_clean/fastp.json -h {params.folder}genome_data/fq_clean/fastp.html
+            """
+else:
+    rule fastq_cleaning:
+        input: 
+            r1_brut = R1
+        output:
+            R1_clean = expand("{fold}genome_data/fq_clean/{name}_clean_R1.fq.gz", fold = OUTPUT_FOLD, name = R1_NAME)
+        conda:
+            CONFIG_FOLDER + "fastp.yml"
+        params:
+            folder = OUTPUT_FOLD
+        shell:
+            """
+            echo "cleaning illumina reads..."
+            fastp -i {input.r1_brut} -o {output.R1_clean} -j {params.folder}genome_data/fq_clean/fastp.json -h {params.folder}genome_data/fq_clean/fastp.html
+            """
+    
+
+
 
 
 ################################
@@ -221,8 +256,8 @@ if config["use_bowtie"]:
     if is_paired:
         rule bowtie_mapping:
             input:
-                r1 = R1,
-                r2 = R2,
+                r1 = expand("{fold}genome_data/fq_clean/{name}_clean_R1.fq.gz", fold = OUTPUT_FOLD, name = R1_NAME),
+                r2 = expand("{fold}genome_data/fq_clean/{name}_clean_R2.fq.gz", fold = OUTPUT_FOLD, name = R1_NAME),
                 bowtie_index = expand("{folder}genome_data/index/{index_name}{extension}.bt2", folder = OUTPUT_FOLD, index_name = BUILD_NAME, extension = [".1", ".2", ".3", ".4", ".rev.1", ".rev.2"])
             params:
                 idx = expand("{fold}genome_data/index/{name}", fold = OUTPUT_FOLD, name = BUILD_NAME)
@@ -239,7 +274,7 @@ if config["use_bowtie"]:
     else:
         rule bowtie_mapping:
             input:
-                r1 = R1,
+                r1 = expand("{fold}genome_data/fq_clean/{name}_clean_R1.fq.gz", fold = OUTPUT_FOLD, name = R1_NAME),
                 bowtie_index = expand("{folder}genome_data/index/{index_name}{extension}.bt2", folder = OUTPUT_FOLD, index_name = BUILD_NAME, extension = [".1", ".2", ".3", ".4", ".rev.1", ".rev.2"])
             params:
                 idx = expand("{fold}genome_data/index/{name}", fold = OUTPUT_FOLD, name = BUILD_NAME)
@@ -275,8 +310,8 @@ if config["use_bowtie"]:
         # for each species : read concordants and put all of their id in a txt file, then sort concordants in fastq files depending on R1 and R2 
         checkpoint extract_concordants:
             input: 
-                r1 = R1,
-                r2 = R2,
+                r1 = expand("{fold}genome_data/fq_clean/{name}_clean_R1.fq.gz", fold = OUTPUT_FOLD, name = R1_NAME),
+                r2 = expand("{fold}genome_data/fq_clean/{name}_clean_R2.fq.gz", fold = OUTPUT_FOLD, name = R1_NAME),
                 species_file = SPECIES_LST,
                 sam = expand("{fold}{name}_{build}.sam", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME)
             output:
@@ -326,7 +361,7 @@ if config["use_bowtie"]:
             input:
                 species_file = SPECIES_LST,
                 sam = expand("{fold}{name}_{build}.sam", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME),
-                r1 = R1
+                r1 = expand("{fold}genome_data/fq_clean/{name}_clean_R1.fq.gz", fold = OUTPUT_FOLD, name = R1_NAME)
             output:
                 directory(OUTPUT_FOLD + "mapped/aligned/")
             params: 
@@ -349,7 +384,7 @@ if config["use_bowtie"]:
 
                     # filenames
                     ALIGNED={params.folder}mapped/aligned/{params.name}_{params.build}_concSH_${{sp}}.txt
-                    ALIGNED_SEQ={params.folder}mapped/aligned/{params.name}_{params.build}_concSH_${{sp}}.fastq
+                    ALIGNED_SEQ={params.folder}mapped/aligned/{params.name}_{params.build}_concSH_${{sp}}_R1.fastq
 
                     # if species name present in line, prints line in temporary out file
                     awk -F "\t" -v s="${{sp}}" '{{split($2,b,":"); split(b[2],c,"_"); split($3,a,"_");
@@ -369,19 +404,30 @@ if config["use_bowtie"]:
     checkpoint metrics_per_species:
         input:
             species_file = SPECIES_LST,
-            fastq = get_fastq_from_mapping()
+            fastq = get_fastq_from_mapping(),
+            r1_brut = R1
         output:
             directory(OUTPUT_FOLD + "mapped/metrics/")
         params: 
             name = R1_NAME, 
             build = BUILD_NAME,
             folder = OUTPUT_FOLD,
-            read_lg = READ_LG
+            read_lg = READ_LG,
+            is_paired = int(is_paired)
         shell:
             """
             echo "calculating metrics per species..."
             mkdir -p {output[0]}
             species=$(cat {input.species_file})
+
+            # total number of reads in whole sample
+            NB_TOTAL_READS_R1=$(zcat {input.r1_brut} | echo $((`wc -l`/4)))
+            if [ {params.is_paired} -eq 1 ]; then
+                NB_TOTAL_READS=$((NB_TOTAL_READS_R1 * 2))
+            else
+                NB_TOTAL_READS=$NB_TOTAL_READS_R1
+            fi
+
             # for each species
             for sp in $species; do
                     
@@ -389,14 +435,19 @@ if config["use_bowtie"]:
                 CONCORD_R1={params.folder}mapped/aligned/{params.name}_{params.build}_concSH_${{sp}}_R1.fastq
                 METRIC={params.folder}mapped/metrics/${{sp}}_metrics.txt
 
-                echo -e "library\tNumber reads\tNumber mapped nt" > $METRIC
-                # number of lines
-                LG=$(wc -l $CONCORD_R1 | awk -F " " '{{print $1}}')
-                # number of reads
-                READS=$(expr $LG / 2)
-                # write data
-                echo -e "$sp\t$READS\t$(expr $READS \* {params.read_lg})" >> $METRIC
-                done
+                # number of reads for the species
+                NB_READS_R1=$($(wc -l $CONCORD_R1 | awk -F " " '{{print $1}}') / 4)
+                if [ {params.is_paired} -eq 1 ]; then
+                    NB_READS=$((NB_READS_R1 * 2))
+                else
+                    NB_READS=$NB_READS_R1
+                fi
+
+                # print in file
+                echo -e "library\tNumber reads\tNumber mapped nt\tPercents reads" > $METRIC
+                echo -e "$sp\t$NB_READS\t$(($NB_READS * {params.read_lg}))\t(($NB_READS / NB_TOTAL_READS * 100))"
+
+            done
                 """
 
     # for each species: remapping on reference genome
@@ -432,7 +483,7 @@ if config["use_bowtie"]:
                 REMAP_BAM={params.folder}mapped/bam/{params.name}_{params.build}_concSH_${{sp}}.bam
 
                 # filter original sam with concordant reads only for the current species (save in temporaty file)
-                java -jar $PICARD FilterSamReads --VERBOSITY ERROR --QUIET true -I {input.sam} -O {params.folder}int.sam -FILTER includeReadList -READ_LIST_FILE $CONCORD 2> {output.fold}log.txt
+                java -jar $PICARD FilterSamReads --VERBOSITY ERROR --QUIET true -I {input.sam} -O {params.folder}int.sam -FILTER includeReadList -READ_LIST_FILE $CONCORD 2> {params.folder}log.txt
                 
                 # keep only headers with contigs regarding the current species (save in temporaty file)
                 awk -F "\t" -v s="$sp" '{{split($2, a, ":"); split(a[2],b,"_"); if ((a[1] == "SN") && (b[1] == s)) print $0; else if (a[1] != "SN") print $0}}' {params.folder}int.sam > {params.folder}int2.sam
@@ -442,6 +493,8 @@ if config["use_bowtie"]:
                 rm {params.folder}int.sam {params.folder}int2.sam
                 # index bam file
                 samtools index $REMAP_BAM
+
+                rm {params.folder}log.txt
             done
             """
 
@@ -486,7 +539,7 @@ if config["use_bowtie"]:
                 # create .fa.bed file
                 awk 'BEGIN {{FS="\t"}} {{print $1 FS "0" FS $2}}' $GENOME.fai > $GENOME.bed
                 # calculate coverage statistics
-                jvarkit bamstats04 -B $GENOME.bed $REMAP_BAM > $COVFILE 2> {output.fold}log.txt
+                jvarkit bamstats04 -B $GENOME.bed $REMAP_BAM > $COVFILE 2> {params.folder}log.txt
                 # calculate median
                 MEDCOV=$(cat $COVFILE | sed '1d' | awk -F "\t" '{{print $9}}'| sort -k 1n,1 | tail -n1| cut -d "." -f 1)
                 # if median = 0, median = 5
@@ -498,8 +551,10 @@ if config["use_bowtie"]:
                 RATIO=$((MEDCOV * 30 / 100))
                 MEDGRAPH=$(($MEDCOV + $RATIO))
                 # create graph
-                java -jar $PICARD CreateSequenceDictionary -VERBOSITY ERROR -QUIET true -R $GENOME -O $GENOME.dict 2> {output.fold}log.txt
-                jvarkit wgscoverageplotter -C $MEDGRAPH -R $GENOME $REMAP_BAM -o $COVIMG 2> {output.fold}log.txt
+                java -jar $PICARD CreateSequenceDictionary -VERBOSITY ERROR -QUIET true -R $GENOME -O $GENOME.dict 2> {params.folder}log.txt
+                jvarkit wgscoverageplotter -C $MEDGRAPH -R $GENOME $REMAP_BAM -o $COVIMG 2> {params.folder}log.txt
+
+                rm {params.folder}log.txt
             done
             """
 
@@ -524,8 +579,8 @@ if config["use_bowtie"]:
     if is_paired:
         rule sort_unmapped:
             input:
-                r1 = R1,
-                r2 = R2,
+                r1 = expand("{fold}genome_data/fq_clean/{name}_clean_R1.fq.gz", fold = OUTPUT_FOLD, name = R1_NAME),
+                r2 = expand("{fold}genome_data/fq_clean/{name}_clean_R2.fq.gz", fold = OUTPUT_FOLD, name = R1_NAME),
                 unmap = expand("{fold}unmapped/{name}_{build}.unmapped.txt", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME)
             output:
                 unmap_r1 = expand("{fold}unmapped/{name}_{build}.unmapped_R1.fasta", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME),
@@ -541,7 +596,7 @@ if config["use_bowtie"]:
     else:
         rule sort_unmapped:
             input:
-                r1 = R1,
+                r1 = expand("{fold}genome_data/fq_clean/{name}_clean_R1.fq.gz", fold = OUTPUT_FOLD, name = R1_NAME),
                 unmap = expand("{fold}unmapped/{name}_{build}.unmapped.txt", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME)
             output:
                 unmap_r1 = expand("{fold}unmapped/{name}_{build}.unmapped_R1.fasta", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME)
@@ -551,42 +606,6 @@ if config["use_bowtie"]:
                 """
                 echo "sorting unmapped reads..."
                 seqtk subseq {input.r1} {input.unmap} | seqtk seq -a - > {output.unmap_r1}
-                """
-
-    # print number of unmapped reads in metrics file
-    if is_paired:
-        rule print_unmapped:
-            input:
-                unmap = expand("{fold}unmapped/{name}_{build}.unmapped.txt", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME)
-            output:
-                metrics = expand("{fold}unmapped/metrics.txt", fold = OUTPUT_FOLD)
-            params:
-                read_lg = READ_LG
-            shell:
-                """
-                echo "calculating metrics of unmapped reads..."
-                echo -e "library\tNumber reads\tNumber mapped nt" > {output.metrics}
-                # number of lines
-                LG=$(wc -l {input.unmap} | awk -F " " '{{print $1}}')
-                # write data
-                echo -e "unmapped\t$LG\t$(expr $LG \* {params.read_lg})" >> {output.metrics}
-                """
-    else:
-        rule print_unmapped:
-            input:
-                unmap = expand("{fold}unmapped/{name}_{build}.unmapped.txt", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME)
-            output:
-                metrics = expand("{fold}unmapped/metrics.txt", fold = OUTPUT_FOLD)
-            params:
-                read_lg = READ_LG
-            shell:
-                """
-                echo "calculating metrics of unmapped reads..."
-                echo -e "library\tNumber reads\tNumber mapped nt" > {output.metrics}
-                # number of lines
-                LG=$(wc -l {input.unmap} | awk -F " " '{{print $1}}')
-                # write data
-                echo -e "unmapped\t$LG\t$(expr $LG \* {params.read_lg})" >> {output.metrics}
                 """
 
     # run unmapped reads through Kraken2
@@ -628,9 +647,9 @@ if config["use_bowtie"]:
     ## global metrics
     rule global_metrics:
         input:
-            r1 = R1,
+            r1_brut = R1,
+            r1_clean = expand("{fold}genome_data/fq_clean/{name}_clean_R1.fq.gz", fold = OUTPUT_FOLD, name = R1_NAME),
             species_file = SPECIES_LST,
-            metrics_unmapped = expand("{fold}unmapped/metrics.txt", fold = OUTPUT_FOLD),
             metrics_mapped = get_metrics_files
         output:
             glob_metrics = expand("{fold}global_metrics.txt", fold = OUTPUT_FOLD)
@@ -642,16 +661,27 @@ if config["use_bowtie"]:
             is_paired = int(is_paired)
         shell:
             """
-            # print number of reads at the beginning of file
-            READS_R1=$(zcat {input.r1} | echo $((`wc -l`/4)))
-            if [ {params.is_paired -eq 1} ]; then
-                echo $(expr $READS_R1 \* 2) > {output.glob_metrics}
+            # total number of reads in whole sample
+            NB_TOTAL_READS_R1=$(zcat {input.r1_brut} | echo $((`wc -l`/4)))
+            if [ {params.is_paired} -eq 1 ]; then
+                NB_TOTAL_READS=$((NB_TOTAL_READS_R1 * 2))
             else
-                echo $READS_R1 > {output.glob_metrics}
+                NB_TOTAL_READS=$NB_TOTAL_READS_R1
             fi
-            # copy unmapped metrics file
-            cat {input.metrics_unmapped} >> {output.glob_metrics}
-            species=$(cat {input.species_file})
+
+            NB_TOTAL_READS_R1_CLEAN=$(zcat {input.r1_clean} | echo $((`wc -l`/4)))
+            if [ {params.is_paired} -eq 1 ]; then
+                NB_TOTAL_READS_CLEAN=$((NB_TOTAL_READS_R1_CLEAN * 2))
+            else
+                NB_TOTAL_READS_CLEAN=$NB_TOTAL_READS_R1_CLEAN
+            fi
+
+            # print number of reads at the beginning of file
+            echo -e "total reads\t$NB_TOTAL_READS" > {output.glob_metrics}
+            echo -e "clean reads\t$NB_TOTAL_READS_CLEAN" >> {output.glob_metrics}
+            
+            echo -e "library\tNumber reads\tNumber mapped nt\tPercents reads" >> {output.glob_metrics}
+
             # for each species
             for sp in $species; do
                 # filename
@@ -692,25 +722,24 @@ elif not config["use_bowtie"]:
     if is_paired:
         rule kraken_alignment:
             input:
-                r1 = R1,
-                r2 = R2,
+                r1 = expand("{fold}genome_data/fq_clean/{name}_clean_R1.fq.gz", fold = OUTPUT_FOLD, name = R1_NAME),
+                r2 = expand("{fold}genome_data/fq_clean/{name}_clean_R2.fq.gz", fold = OUTPUT_FOLD, name = R1_NAME),
                 kefir_library = get_kraken_library
-            params:
-                kefir_library = directory(OUTPUT_FOLD + "genome_data/kraken_kefir_library")
             conda:
                 CONFIG_FOLDER + "kraken2.yml"
             output:
                 report = expand("{fold}mapped/kraken_report.k2report", fold = OUTPUT_FOLD),
                 out = expand("{fold}mapped/kraken_output.kraken2", fold = OUTPUT_FOLD),
-                unmap_r1 = expand("{fold}unmapped/{name}_{build}.unmapped_R1.fasta", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME),
-                unmap_r2 = expand("{fold}unmapped/{name}_{build}.unmapped_R2.fasta", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME)
+                unmap_r1 = expand("{fold}unmapped/{name}_{build}_unmapped_1.fastq", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME),
+                unmap_r2 = expand("{fold}unmapped/{name}_{build}_unmapped_2.fastq", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME)
             params:
+                kefir_library = directory(OUTPUT_FOLD + "genome_data/kraken_kefir_library"),
                 name = R1_NAME, 
                 build = BUILD_NAME,
                 folder = OUTPUT_FOLD
             shell:
                 """
-                UNMAP={params.folder}unmapped/{params.name}_{params.build}_#.fastq
+                UNMAP={params.folder}unmapped/{params.name}_{params.build}_unmapped#.fastq
                 echo "aligning with kraken2..."
                 kraken2 --db {params.kefir_library} --threads 8 --report {output.report} --report-minimizer-data --paired --unclassified-out $UNMAP {input.r1} {input.r2} > {output.out}
                 """
@@ -718,136 +747,84 @@ elif not config["use_bowtie"]:
     else:
         rule kraken_alignment:
             input:
-                r1 = R1,
+                r1 = expand("{fold}genome_data/fq_clean/{name}_clean_R1.fq.gz", fold = OUTPUT_FOLD, name = R1_NAME),
                 kefir_library = get_kraken_library
             params:
-                kefir_library = directory(OUTPUT_FOLD + "genome_data/kraken_kefir_library")
+                kefir_library = directory(OUTPUT_FOLD + "genome_data/kraken_kefir_library"),
+                name = R1_NAME, 
+                build = BUILD_NAME,
+                folder = OUTPUT_FOLD
             conda:
                 CONFIG_FOLDER + "kraken2.yml"
             output:
                 report = expand("{fold}mapped/kraken_report.k2report", fold = OUTPUT_FOLD),
-                out = expand("{fold}mapped/kraken_output.kraken2", fold = OUTPUT_FOLD)
+                out = expand("{fold}mapped/kraken_output.kraken2", fold = OUTPUT_FOLD),
+                unmap_r1 = expand("{fold}unmapped/{name}_{build}_unmapped.fastq", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME)
             shell:
                 """
                 echo "aligning with kraken2..."
-                kraken2 --db {params.kefir_library} --threads 8 --report {output.report} --report-minimizer-data {input.r1} > {output.out}
+                kraken2 --db {params.kefir_library} --threads 8 --report {output.report} --report-minimizer-data --unclassified-out {params.folder}unmapped/{params.name}_{params.build}_unmapped.fastq {input.r1} > {output.out}
                 """
 
     ## Analysis per species
-    # for each species : extract concordant matches
-    if is_paired:
-        checkpoint sort_concordants:
-            input: 
-                r1 = R1,
-                r2 = R2,
-                out = expand("{fold}mapped/kraken_output.kraken2", fold = OUTPUT_FOLD)
-            output:
-                dir = directory(OUTPUT_FOLD + "mapped/aligned/"),
-                species_file = temp(SPECIES_LST)
-            envmodules:
-                "userspace",
-                "biology",
-                "python"
-            params:
-                extract_kraken_reads = CONFIG_FOLDER + "extract_kraken_reads.py",
-                name = R1_NAME, 
-                build = BUILD_NAME,
-                folder = OUTPUT_FOLD,
-                tax_dict = bash_dict(get_ncbi_id_metagenome())
-            shell:
-                """
-                mkdir -p {output.dir}
-                declare -A dict=({params.tax_dict})
-
-                echo "extracting concordants..."
-                # for each species
-                for sp in "${{!dict[@]}}"; do
-                    id="${{dict[$sp]}}"
-                    echo $sp
-
-                    # filenames
-                    CONCORD_R1={params.folder}mapped/aligned/{params.name}_{params.build}_concSH_${{sp}}_R1.fastq
-                    CONCORD_R2={params.folder}mapped/aligned/{params.name}_{params.build}_concSH_${{sp}}_R2.fastq
-
-                    # extract kraken reads
-                    {params.extract_kraken_reads} -k {input.out} -s1 {input.r1} -s2 {input.r2} -t $id --fastq-output -o $CONCORD_R1 -o2 $CONCORD_R2
-
-                    # if file not empty, add name to the species file
-                    if [ -s $CONCORD_R1 ]; then
-                        echo $sp >> {output.species_file}
-                    # if empty, delete it
-                    else
-                        rm $CONCORD_R1
-                    fi
-                done
-                """
-
-    # for each species : extract aligned matches
-    else:
-        checkpoint sort_aligned:
-            input: 
-                r1 = R1,
-                out = expand("{fold}mapped/kraken_output.kraken2", fold = OUTPUT_FOLD)
-            output:
-                dir = directory(OUTPUT_FOLD + "mapped/aligned/"),
-                species_file = temp(SPECIES_LST)
-            envmodules:
-                "userspace",
-                "biology",
-                "python"
-            params:
-                extract_kraken_reads = CONFIG_FOLDER + "extract_kraken_reads.py",
-                name = R1_NAME, 
-                build = BUILD_NAME,
-                folder = OUTPUT_FOLD,
-                tax_dict = bash_dict(get_ncbi_id_metagenome())
-            shell:
-                """
-                mkdir -p {output[0]}
-                declare -A dict=({params.tax_dict})
-
-                echo "extracting concordants..."
-                # for each species
-                for sp in "${{!dict[@]}}"; do
-                    id="${{dict[$sp]}}"
-                    echo $sp
-
-                    # filename
-                    CONCORD_R1={params.folder}mapped/aligned/{params.name}_{params.build}_concSH_${{sp}}_R1.fastq
-
-                    # extract kraken reads
-                    {params.extract_kraken_reads} -k {input.out} -s {input.r1} -t $id --fastq-output -o $CONCORD_R1
-
-                    # if file not empty, add name to the species file
-                    if [ -s $CONCORD_R1 ]; then
-                        echo $sp >> {output.species_file}
-                    # if empty, delete it
-                    else
-                        rm $CONCORD_R1
-                    fi
-                done
-                """
-
-    # extract all species present in kraken alignment and put them in txt file
-    rule extract_species:
+    # global metrics per species
+    rule global_metrics:
         input:
-            sam = expand("{fold}{name}_{build}.sam", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME)
+            r1_brut = R1,
+            r1_clean = expand("{fold}genome_data/fq_clean/{name}_clean_R1.fq.gz", fold = OUTPUT_FOLD, name = R1_NAME),
+            report = expand("{fold}mapped/kraken_report.k2report", fold = OUTPUT_FOLD)
         output:
-            species_file = temp(SPECIES_LST)
-        envmodules:
-            "biology",
-            "samtools"
-        shell: 
+            glob_metrics = expand("{fold}global_metrics.txt", fold = OUTPUT_FOLD)
+        params:
+            read_lg = READ_LG,
+            tax_dict = bash_dict(get_ncbi_id_metagenome()),
+            is_paired = int(is_paired)
+        shell:
             """
-            echo "extracting species..."
-            samtools view -H {input.sam} | awk -F "\t" '{{split($2,a,":"); split(a[2],b,"_"); if (a[1] == "SN") print b[1]}}' | sort -u > {output.species_file}
-            """
-                
+            declare -A dict=({params.tax_dict})
+            echo "calculating metrics..."
 
-                
+            # total number of reads in whole sample
+            NB_TOTAL_READS_R1=$(zcat {input.r1_brut} | echo $((`wc -l`/4)))
+            if [ {params.is_paired} -eq 1 ]; then
+                NB_TOTAL_READS=$((NB_TOTAL_READS_R1 * 2))
+            else
+                NB_TOTAL_READS=$NB_TOTAL_READS_R1
+            fi
 
+            NB_TOTAL_READS_R1_CLEAN=$(zcat {input.r1_clean} | echo $((`wc -l`/4)))
+            if [ {params.is_paired} -eq 1 ]; then
+                NB_TOTAL_READS_CLEAN=$((NB_TOTAL_READS_R1_CLEAN * 2))
+            else
+                NB_TOTAL_READS_CLEAN=$NB_TOTAL_READS_R1_CLEAN
+            fi
 
-
-    
+            # print number of reads at the beginning of file
+            echo -e "total reads\t$NB_TOTAL_READS" > {output.glob_metrics}
+            echo -e "clean reads\t$NB_TOTAL_READS_CLEAN" >> {output.glob_metrics}
             
+            echo -e "library\tNumber reads\tNumber mapped nt\tPercents reads" >> {output.glob_metrics}
+
+            # for each species
+            for sp in "${{!dict[@]}}"; do
+                id="${{dict[$sp]}}"
+
+                # get line corresponding to the species
+                ligne=$(awk -F '\t' -v id="$id" '{{if ($7 == id) print}}' {input.report})
+                if [ ! -z "$ligne" ]; then
+                    # extract right column
+                    percent=$(echo "$ligne" | cut -f1)
+                    nb_reads=$(echo "$ligne" | cut -f2)
+                    echo -e "$sp\t$nb_reads\t$(($nb_reads * {params.read_lg}))\t$(($nb_reads / $NB_TOTAL_READS *100))" >> {output.glob_metrics}
+                fi
+            done    
+
+            """
+            
+
+
+
+
+
+
 
