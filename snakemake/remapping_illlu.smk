@@ -445,7 +445,7 @@ if config["use_bowtie"]:
 
                 # print in file
                 echo -e "library\tNumber reads\tNumber mapped nt\tPercents reads" > $METRIC
-                echo -e "$sp\t$NB_READS\t$(($NB_READS * {params.read_lg}))\t(($NB_READS / NB_TOTAL_READS * 100))"
+                echo -e "$sp\t$NB_READS\t$(($NB_READS * {params.read_lg}))\t(($NB_READS / $NB_TOTAL_READS * 100))" >> $METRIC
 
             done
                 """
