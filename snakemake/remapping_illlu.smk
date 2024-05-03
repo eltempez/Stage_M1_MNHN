@@ -200,7 +200,7 @@ if is_paired:
             R1_clean = expand("{fold}genome_data/fq_clean/{name}_clean_R1.fq.gz", fold = OUTPUT_FOLD, name = R1_NAME),
             R2_clean = expand("{fold}genome_data/fq_clean/{name}_clean_R2.fq.gz", fold = OUTPUT_FOLD, name = R1_NAME)
         conda:
-            CONFIG_FOLDER + "fastp.yml"
+            CONFIG_FOLDER + "yml/fastp.yml"
         params:
             folder = OUTPUT_FOLD
         shell:
@@ -215,7 +215,7 @@ else:
         output:
             R1_clean = expand("{fold}genome_data/fq_clean/{name}_clean_R1.fq.gz", fold = OUTPUT_FOLD, name = R1_NAME)
         conda:
-            CONFIG_FOLDER + "fastp.yml"
+            CONFIG_FOLDER + "yml/fastp.yml"
         params:
             folder = OUTPUT_FOLD
         shell:
@@ -296,7 +296,7 @@ if config["use_bowtie"]:
         input:
             sam = expand("{fold}{name}_{build}.sam", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME)
         output:
-            species_file = temp(SPECIES_LST)
+            species_file = SPECIES_LST
         envmodules:
             "biology",
             "samtools"
@@ -320,7 +320,7 @@ if config["use_bowtie"]:
                 "biology",
                 "samtools"
             conda:
-                CONFIG_FOLDER + "seqtk.yml"
+                CONFIG_FOLDER + "yml/seqtk.yml"
             params: 
                 name = R1_NAME, 
                 build = BUILD_NAME,
@@ -372,7 +372,7 @@ if config["use_bowtie"]:
                 "biology",
                 "samtools"
             conda:
-                CONFIG_FOLDER + "seqtk.yml"
+                CONFIG_FOLDER + "yml/seqtk.yml"
             shell:
                 """
                 mkdir -p {output[0]}
@@ -436,7 +436,7 @@ if config["use_bowtie"]:
                 METRIC={params.folder}mapped/metrics/${{sp}}_metrics.txt
 
                 # number of reads for the species
-                NB_READS_R1=$($(wc -l $CONCORD_R1 | awk -F " " '{{print $1}}') / 4)
+                NB_READS_R1=$(($(wc -l < $CONCORD_R1) / 4))
                 if [ {params.is_paired} -eq 1 ]; then
                     NB_READS=$((NB_READS_R1 * 2))
                 else
@@ -445,7 +445,7 @@ if config["use_bowtie"]:
 
                 # print in file
                 echo -e "library\tNumber reads\tNumber mapped nt\tPercents reads" > $METRIC
-                echo -e "$sp\t$NB_READS\t$(($NB_READS * {params.read_lg}))\t(($NB_READS / $NB_TOTAL_READS * 100))" >> $METRIC
+                echo -e "$sp\t$NB_READS\t$(($NB_READS * {params.read_lg}))\t$(echo "scale=2; $NB_READS * 100 / $NB_TOTAL_READS" | bc)" >> $METRIC
 
             done
                 """
@@ -513,7 +513,7 @@ if config["use_bowtie"]:
             "picard",
             "samtools"
         conda:
-            CONFIG_FOLDER + "jvarkit.yml"
+            CONFIG_FOLDER + "yml/jvarkit.yml"
         params: 
             name = R1_NAME, 
             build = BUILD_NAME,
@@ -586,7 +586,7 @@ if config["use_bowtie"]:
                 unmap_r1 = expand("{fold}unmapped/{name}_{build}.unmapped_R1.fasta", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME),
                 unmap_r2 = expand("{fold}unmapped/{name}_{build}.unmapped_R2.fasta", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME)
             conda:
-                CONFIG_FOLDER + "seqtk.yml"
+                CONFIG_FOLDER + "yml/seqtk.yml"
             shell:
                 """
                 echo "sorting unmapped reads..."
@@ -601,7 +601,7 @@ if config["use_bowtie"]:
             output:
                 unmap_r1 = expand("{fold}unmapped/{name}_{build}.unmapped_R1.fasta", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME)
             conda:
-                CONFIG_FOLDER + "seqtk.yml"
+                CONFIG_FOLDER + "yml/seqtk.yml"
             shell:
                 """
                 echo "sorting unmapped reads..."
@@ -620,7 +620,7 @@ if config["use_bowtie"]:
             params:
                 kraken_library = KRAKEN_LIB
             conda:
-                CONFIG_FOLDER + "kraken2.yml"
+                CONFIG_FOLDER + "yml/kraken2.yml"
             shell:
                 """
                 echo "aligning unmapped reads..."
@@ -636,7 +636,7 @@ if config["use_bowtie"]:
             params:
                 kraken_library = KRAKEN_LIB
             conda:
-                CONFIG_FOLDER + "kraken2.yml"
+                CONFIG_FOLDER + "yml/kraken2.yml"
             shell:
                 """
                 echo "aligning unmapped reads..."
@@ -683,6 +683,7 @@ if config["use_bowtie"]:
             echo -e "library\tNumber reads\tNumber mapped nt\tPercents reads" >> {output.glob_metrics}
 
             # for each species
+            species=$(cat {input.species_file})
             for sp in $species; do
                 # filename
                 METRIC={params.folder}mapped/metrics/${{sp}}_metrics.txt
@@ -706,7 +707,7 @@ elif not config["use_bowtie"]:
         output:
             directory(OUTPUT_FOLD + "genome_data/kraken_kefir_library")
         conda:
-            CONFIG_FOLDER + "kraken2.yml"
+            CONFIG_FOLDER + "yml/kraken2.yml"
         shell:
             """
             echo "building kraken2 library..."
@@ -726,7 +727,7 @@ elif not config["use_bowtie"]:
                 r2 = expand("{fold}genome_data/fq_clean/{name}_clean_R2.fq.gz", fold = OUTPUT_FOLD, name = R1_NAME),
                 kefir_library = get_kraken_library
             conda:
-                CONFIG_FOLDER + "kraken2.yml"
+                CONFIG_FOLDER + "yml/kraken2.yml"
             output:
                 report = expand("{fold}mapped/kraken_report.k2report", fold = OUTPUT_FOLD),
                 out = expand("{fold}mapped/kraken_output.kraken2", fold = OUTPUT_FOLD),
@@ -755,7 +756,7 @@ elif not config["use_bowtie"]:
                 build = BUILD_NAME,
                 folder = OUTPUT_FOLD
             conda:
-                CONFIG_FOLDER + "kraken2.yml"
+                CONFIG_FOLDER + "yml/kraken2.yml"
             output:
                 report = expand("{fold}mapped/kraken_report.k2report", fold = OUTPUT_FOLD),
                 out = expand("{fold}mapped/kraken_output.kraken2", fold = OUTPUT_FOLD),
@@ -815,7 +816,7 @@ elif not config["use_bowtie"]:
                     # extract right column
                     percent=$(echo "$ligne" | cut -f1)
                     nb_reads=$(echo "$ligne" | cut -f2)
-                    echo -e "$sp\t$nb_reads\t$(($nb_reads * {params.read_lg}))\t$(($nb_reads / $NB_TOTAL_READS *100))" >> {output.glob_metrics}
+                    echo -e "$sp\t$nb_reads\t$(($nb_reads * {params.read_lg}))\t$$(echo "scale=2; $nb_reads * 100 / $NB_TOTAL_READS" | bc)" >> {output.glob_metrics}
                 fi
             done    
 
