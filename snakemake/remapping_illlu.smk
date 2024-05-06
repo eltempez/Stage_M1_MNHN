@@ -49,7 +49,9 @@ def bash_dict(dict):
 
 ## Filenames
 # inputs
+KRAKEN_LIB_UNMAP = check_slash(config["kraken_library_unmapped"])
 KRAKEN_LIB = check_slash(config["kraken_library"])
+BOWTIE_INDEX = check_slash(config["bowtie_index"])
 R1 = config["r1"]
 R2 = config["r2"]
 READ_LG = config["read_lg"]
@@ -64,6 +66,7 @@ else:
 R1_NAME = get_prefix(R1, is_paired)
 # outputs
 SPECIES_LST = f"{OUTPUT_FOLD}species.txt"
+
 
 ## wildcards
 # .fasta and .fa files in the initial metagenome
@@ -129,8 +132,19 @@ def get_svgfiles(wildcards):
 def get_kraken_library(wildcards):
     checkpoint_output = checkpoints.build_kraken_library.get(**wildcards).output[0]
     return expand("{fold}genome_data/kraken_kefir_library/{i}", fold = OUTPUT_FOLD, i = glob_wildcards(os.path.join(checkpoint_output, "{i}")).i)
- 
 
+def kraken_library_input():
+    if KRAKEN_LIB == "":
+        return get_kraken_library
+    else:
+        return KRAKEN_LIB
+
+def kraken_library_folder():
+    if KRAKEN_LIB == "":
+        return directory(OUTPUT_FOLD + "genome_data/kraken_kefir_library")
+    else:
+        return KRAKEN_LIB
+ 
 
 #-------------------------#
 ###########################
@@ -233,24 +247,43 @@ else:
 ################################
 if config["use_bowtie"]:
     # build bowtie library
-    rule build_bowtie_library:
-        input:
-            fa_files = expand("{fold}genome_data/fa/{species}.fa", fold = OUTPUT_FOLD, species = ALL_SPECIES)
-        output:
-            bowtie_index = expand("{folder}genome_data/index/{index_name}{extension}.bt2", folder = OUTPUT_FOLD, index_name = BUILD_NAME, extension = [".1", ".2", ".3", ".4", ".rev.1", ".rev.2"])
-        params:
-            fa_fold = expand("{fold}genome_data/fa/", fold = OUTPUT_FOLD),
-            output_fold = expand("{fold}genome_data/index/", fold = OUTPUT_FOLD),
-            index_name = BUILD_NAME
-        envmodules:
-            "biology",
-            "bowtie2"
-        shell:
-            """
-            echo "building bowtie library..."
-            bowtie2-build -q {params.fa_fold}*.fa {params.output_fold}{params.index_name}
-            """
-        
+    if BOWTIE_INDEX == "":
+        rule build_bowtie_library:
+            input:
+                fa_files = expand("{fold}genome_data/fa/{species}.fa", fold = OUTPUT_FOLD, species = ALL_SPECIES)
+            output:
+                bowtie_index = expand("{folder}genome_data/index/{index_name}{extension}.bt2", folder = OUTPUT_FOLD, index_name = BUILD_NAME, extension = [".1", ".2", ".3", ".4", ".rev.1", ".rev.2"])
+            params:
+                fa_fold = expand("{fold}genome_data/fa/", fold = OUTPUT_FOLD),
+                output_fold = expand("{fold}genome_data/index/", fold = OUTPUT_FOLD),
+                index_name = BUILD_NAME
+            envmodules:
+                "biology",
+                "bowtie2"
+            shell:
+                """
+                echo "building bowtie library..."
+                bowtie2-build -q {params.fa_fold}*.fa {params.output_fold}{params.index_name}
+                """
+    
+    else:
+        rule build_bowtie_library:
+            input:
+                BOWTIE_INDEX
+            output:
+                bowtie_index=expand("{folder}genome_data/index/{index_name}{extension}.bt2", folder=OUTPUT_FOLD, index_name=BUILD_NAME, extension=[".1", ".2", ".3", ".4", ".rev.1", ".rev.2"])
+            params:
+                in_fold=BOWTIE_INDEX,
+                out_fold=expand("{folder}genome_data/index/", folder=OUTPUT_FOLD),
+                build=BUILD_NAME
+            shell:
+                """
+                for file in {params.in_fold}*; do
+                    extension="${{file#*.}}"
+                    new_file="{params.out_fold}{params.build}.$extension"
+                    cp $file $new_file
+                done
+                """
 
     ## mapping against metagenome
     if is_paired:
@@ -618,7 +651,7 @@ if config["use_bowtie"]:
                 report = expand("{fold}unmapped/kraken_rescue_report.k2report", fold = OUTPUT_FOLD),
                 out = expand("{fold}unmapped/kraken_rescue_output.kraken2", fold = OUTPUT_FOLD)
             params:
-                kraken_library = KRAKEN_LIB
+                kraken_library = KRAKEN_LIB_UNMAP
             conda:
                 CONFIG_FOLDER + "yml/kraken2.yml"
             shell:
@@ -634,7 +667,7 @@ if config["use_bowtie"]:
                 report = expand("{fold}unmapped/kraken_rescue_report.k2report", fold = OUTPUT_FOLD),
                 out = expand("{fold}unmapped/kraken_rescue_output.kraken2", fold = OUTPUT_FOLD)
             params:
-                kraken_library = KRAKEN_LIB
+                kraken_library = KRAKEN_LIB_UNMAP
             conda:
                 CONFIG_FOLDER + "yml/kraken2.yml"
             shell:
@@ -700,24 +733,26 @@ if config["use_bowtie"]:
 ########## IF KRAKEN2 ##########
 ################################
 elif not config["use_bowtie"]:
-    # build kraken2 library
-    checkpoint build_kraken_library:
-        input:
-            fa_files = expand("{fold}genome_data/fa/{species}.fa", fold = OUTPUT_FOLD, species = ALL_SPECIES)
-        output:
-            directory(OUTPUT_FOLD + "genome_data/kraken_kefir_library")
-        conda:
-            CONFIG_FOLDER + "yml/kraken2.yml"
-        shell:
-            """
-            echo "building kraken2 library..."
-            # add taxonomy data
-            kraken2-build --download-taxonomy --db {output}
-            # add fasta files to library
-            for file in {input.fa_files}; do kraken2-build --add-to-library $file --db {output};  done
-            # create library
-            kraken2-build --build --db {output}
-            """
+    # build or copy kraken2 library
+    if KRAKEN_LIB == "":
+        checkpoint build_kraken_library:
+            input:
+                fa_files = expand("{fold}genome_data/fa/{species}.fa", fold = OUTPUT_FOLD, species = ALL_SPECIES)
+            output:
+                directory(OUTPUT_FOLD + "genome_data/kraken_kefir_library")
+            conda:
+                CONFIG_FOLDER + "yml/kraken2.yml"
+            shell:
+                """
+                echo "building kraken2 library..."
+                # add taxonomy data
+                kraken2-build --download-taxonomy --db {output}
+                # add fasta files to library
+                for file in {input.fa_files}; do kraken2-build --add-to-library $file --db {output};  done
+                # create library
+                kraken2-build --build --db {output}
+                """
+
 
     # align reads with kraken library + rescue unmapped reads
     if is_paired:
@@ -725,7 +760,7 @@ elif not config["use_bowtie"]:
             input:
                 r1 = expand("{fold}genome_data/fq_clean/{name}_clean_R1.fq.gz", fold = OUTPUT_FOLD, name = R1_NAME),
                 r2 = expand("{fold}genome_data/fq_clean/{name}_clean_R2.fq.gz", fold = OUTPUT_FOLD, name = R1_NAME),
-                kefir_library = get_kraken_library
+                kefir_library = kraken_library_input()
             conda:
                 CONFIG_FOLDER + "yml/kraken2.yml"
             output:
@@ -734,7 +769,7 @@ elif not config["use_bowtie"]:
                 unmap_r1 = expand("{fold}unmapped/{name}_{build}_unmapped_1.fastq", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME),
                 unmap_r2 = expand("{fold}unmapped/{name}_{build}_unmapped_2.fastq", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME)
             params:
-                kefir_library = directory(OUTPUT_FOLD + "genome_data/kraken_kefir_library"),
+                kefir_library = kraken_library_folder(),
                 name = R1_NAME, 
                 build = BUILD_NAME,
                 folder = OUTPUT_FOLD
@@ -749,9 +784,9 @@ elif not config["use_bowtie"]:
         rule kraken_alignment:
             input:
                 r1 = expand("{fold}genome_data/fq_clean/{name}_clean_R1.fq.gz", fold = OUTPUT_FOLD, name = R1_NAME),
-                kefir_library = get_kraken_library
+                kefir_library = kraken_library_input()
             params:
-                kefir_library = directory(OUTPUT_FOLD + "genome_data/kraken_kefir_library"),
+                kefir_library = kraken_library_folder(),
                 name = R1_NAME, 
                 build = BUILD_NAME,
                 folder = OUTPUT_FOLD

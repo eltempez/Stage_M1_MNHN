@@ -26,7 +26,13 @@ config_folder: "/trinity/home/etempez/remapping_scripts/config_files/"
 
 ##### Bowtie and Kraken #####
 # should we use Bowtie2 for mapping ? True or False (if False, Kraken2 will be used)
-use_bowtie: True
+use_bowtie: False
 # folder containing the kraken librairy for rescue of unmapped reads
-kraken_library: "/mnt/beegfs/etempez/remapping/kraken_libraries/k2protocol_db/"
+kraken_library_unmapped: "/mnt/beegfs/etempez/remapping/kraken_libraries/k2protocol_db/"
 #kraken_library: "/mnt/beegfs/etempez/remapping/kraken_libraries/kraken_standard/"
+
+## OPTIONAL (leave empty quotes to automate from the species folder): 
+# Bowtie index files folder
+bowtie_index: "/mnt/beegfs/etempez/remapping/bowtie_index/"
+# kraken library folder
+kraken_library: "/mnt/beegfs/etempez/remapping/kraken_libraries/kefir/"
