@@ -444,7 +444,7 @@ if config["use_bowtie"]:
                 fi
 
                 # print in file
-                echo -e "library\tNumber reads\tNumber mapped nt\tPercents reads" > $METRIC
+                echo -e "library\tNumber reads\tNumber mapped nt\tPercents read coverage" > $METRIC
                 echo -e "$sp\t$NB_READS\t$(($NB_READS * {params.read_lg}))\t$(echo "scale=2; $NB_READS * 100 / $NB_TOTAL_READS" | bc)" >> $METRIC
 
             done
@@ -680,7 +680,7 @@ if config["use_bowtie"]:
             echo -e "total reads\t$NB_TOTAL_READS" > {output.glob_metrics}
             echo -e "clean reads\t$NB_TOTAL_READS_CLEAN" >> {output.glob_metrics}
             
-            echo -e "library\tNumber reads\tNumber mapped nt\tPercents reads" >> {output.glob_metrics}
+            echo -e "library\tNumber reads\tNumber mapped nt\tPercents read coverage" >> {output.glob_metrics}
 
             # for each species
             species=$(cat {input.species_file})
@@ -804,7 +804,7 @@ elif not config["use_bowtie"]:
             echo -e "total reads\t$NB_TOTAL_READS" > {output.glob_metrics}
             echo -e "clean reads\t$NB_TOTAL_READS_CLEAN" >> {output.glob_metrics}
             
-            echo -e "library\tNumber reads\tNumber mapped nt\tPercents reads" >> {output.glob_metrics}
+            echo -e "library\tNumber reads\tNumber mapped nt\tPercents read coverage" >> {output.glob_metrics}
 
             # for each species
             for sp in "${{!dict[@]}}"; do
@@ -814,9 +814,12 @@ elif not config["use_bowtie"]:
                 ligne=$(awk -F '\t' -v id="$id" '{{if ($7 == id) print}}' {input.report})
                 if [ ! -z "$ligne" ]; then
                     # extract right column
-                    percent=$(echo "$ligne" | cut -f1)
-                    nb_reads=$(echo "$ligne" | cut -f2)
-                    echo -e "$sp\t$nb_reads\t$(($nb_reads * {params.read_lg}))\t$$(echo "scale=2; $nb_reads * 100 / $NB_TOTAL_READS" | bc)" >> {output.glob_metrics}
+                    if [ {params.is_paired} -eq 1 ]; then
+                        nb_reads=$(($(echo "$ligne" | cut -f2) * 2))
+                    else
+                        nb_reads=$(echo "$ligne" | cut -f2)
+                    fi
+                    echo -e "$sp\t$nb_reads\t$(($nb_reads * {params.read_lg}))\t$(echo "scale=2; $nb_reads * 100 / $NB_TOTAL_READS" | bc)" >> {output.glob_metrics}
                 fi
             done    
 
