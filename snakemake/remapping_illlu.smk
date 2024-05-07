@@ -158,11 +158,11 @@ if config["use_bowtie"]:
             out_kraken = expand("{fold}unmapped/kraken_rescue_output.kraken2", fold = OUTPUT_FOLD),
             covfiles = get_covfiles,
             svgfiles = get_svgfiles,
-            glob_metrics = expand("{fold}{name}_{build}_global_metrics.txt", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME)
+            stats = expand("{fold}{name}_{build}_stats.html", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME)
 elif not config["use_bowtie"]:
     rule all:
         input:
-            metrics = expand("{fold}{name}_{build}_global_metrics.txt", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME)
+            stats = expand("{fold}{name}_{build}_stats.html", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME)
 
 
 
@@ -858,6 +858,18 @@ elif not config["use_bowtie"]:
             done
             """
             
+rule print_stats:
+    input:
+        glob_metrics = expand("{fold}{name}_{build}_global_metrics.txt", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME),
+        metagenome_infos = CONFIG_FOLDER + "metagenome_ncbi_id.txt"
+    output:
+        stats = expand("{fold}{name}_{build}_stats.html", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME)
+    envmodules:
+        "biology",
+        "userspace"
+        "R"
+    script:
+        CONFIG_FOLDER + "Rmd/species_distrib.Rmd"
 
 
 
