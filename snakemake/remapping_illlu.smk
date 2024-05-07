@@ -158,11 +158,11 @@ if config["use_bowtie"]:
             out_kraken = expand("{fold}unmapped/kraken_rescue_output.kraken2", fold = OUTPUT_FOLD),
             covfiles = get_covfiles,
             svgfiles = get_svgfiles,
-            glob_metrics = expand("{fold}global_metrics.txt", fold = OUTPUT_FOLD)
+            glob_metrics = expand("{fold}{name}_{build}_global_metrics.txt", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME)
 elif not config["use_bowtie"]:
     rule all:
         input:
-            metrics = expand("{fold}global_metrics.txt", fold = OUTPUT_FOLD)
+            metrics = expand("{fold}{name}_{build}_global_metrics.txt", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME)
 
 
 
@@ -438,7 +438,7 @@ if config["use_bowtie"]:
         input:
             species_file = SPECIES_LST,
             fastq = get_fastq_from_mapping(),
-            r1_brut = R1
+            r1_clean = expand("{fold}genome_data/fq_clean/{name}_clean_R1.fq.gz", fold = OUTPUT_FOLD, name = R1_NAME)
         output:
             directory(OUTPUT_FOLD + "mapped/metrics/")
         params: 
@@ -453,12 +453,11 @@ if config["use_bowtie"]:
             mkdir -p {output[0]}
             species=$(cat {input.species_file})
 
-            # total number of reads in whole sample
-            NB_TOTAL_READS_R1=$(zcat {input.r1_brut} | echo $((`wc -l`/4)))
+            NB_TOTAL_READS_R1_CLEAN=$(zcat {input.r1_clean} | echo $((`wc -l`/4)))
             if [ {params.is_paired} -eq 1 ]; then
-                NB_TOTAL_READS=$((NB_TOTAL_READS_R1 * 2))
+                NB_TOTAL_READS_CLEAN=$((NB_TOTAL_READS_R1_CLEAN * 2))
             else
-                NB_TOTAL_READS=$NB_TOTAL_READS_R1
+                NB_TOTAL_READS_CLEAN=$NB_TOTAL_READS_R1_CLEAN
             fi
 
             # for each species
@@ -478,7 +477,7 @@ if config["use_bowtie"]:
 
                 # print in file
                 echo -e "library\tNumber reads\tNumber mapped nt\tPercents read coverage" > $METRIC
-                echo -e "$sp\t$NB_READS\t$(($NB_READS * {params.read_lg}))\t$(echo "scale=2; $NB_READS * 100 / $NB_TOTAL_READS" | bc)" >> $METRIC
+                echo -e "$sp\t$NB_READS\t$(($NB_READS * {params.read_lg}))\t$(echo "scale=2; $NB_READS * 100 / $NB_TOTAL_READS_CLEAN" | bc)" >> $METRIC
 
             done
                 """
@@ -685,7 +684,7 @@ if config["use_bowtie"]:
             species_file = SPECIES_LST,
             metrics_mapped = get_metrics_files
         output:
-            glob_metrics = expand("{fold}global_metrics.txt", fold = OUTPUT_FOLD)
+            glob_metrics = expand("{fold}{name}_{build}_global_metrics.txt", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME)
         params: 
             name = R1_NAME, 
             build = BUILD_NAME,
@@ -810,7 +809,7 @@ elif not config["use_bowtie"]:
             r1_clean = expand("{fold}genome_data/fq_clean/{name}_clean_R1.fq.gz", fold = OUTPUT_FOLD, name = R1_NAME),
             report = expand("{fold}mapped/kraken_report.k2report", fold = OUTPUT_FOLD)
         output:
-            glob_metrics = expand("{fold}global_metrics.txt", fold = OUTPUT_FOLD)
+            glob_metrics = expand("{fold}{name}_{build}_global_metrics.txt", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME)
         params:
             read_lg = READ_LG,
             tax_dict = bash_dict(get_ncbi_id_metagenome()),
@@ -854,10 +853,9 @@ elif not config["use_bowtie"]:
                     else
                         nb_reads=$(echo "$ligne" | cut -f2)
                     fi
-                    echo -e "$sp\t$nb_reads\t$(($nb_reads * {params.read_lg}))\t$(echo "scale=2; $nb_reads * 100 / $NB_TOTAL_READS" | bc)" >> {output.glob_metrics}
+                    echo -e "$sp\t$nb_reads\t$(($nb_reads * {params.read_lg}))\t$(echo "scale=2; $nb_reads * 100 / $NB_TOTAL_READS_CLEAN" | bc)" >> {output.glob_metrics}
                 fi
-            done    
-
+            done
             """
             
 
