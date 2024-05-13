@@ -7,19 +7,18 @@ params:
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE, results = 'hide', warning=FALSE)
-```
 
-
-```{r}
-library(argparse)
+install.packages("ggplot2", "tidyverse", "ggrepel", "scales", "dplyr", "paletteer")
 library(ggplot2)
 library(tidyverse)
 library(ggrepel)
 library(scales)
 library(dplyr)
 library(paletteer)
+```
 
 
+```{r}
 ##### Setting up #####
 # Functions
 get_sample_name <- function(file_path) {

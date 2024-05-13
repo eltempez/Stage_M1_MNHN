@@ -858,7 +858,7 @@ elif not config["use_bowtie"]:
             done
             """
             
-rule print_stats:
+rule visualise_metrics:
     input:
         glob_metrics = expand("{fold}{name}_{build}_global_metrics.txt", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME),
         metagenome_infos = CONFIG_FOLDER + "metagenome_ncbi_id.txt"
@@ -866,8 +866,15 @@ rule print_stats:
         stats = expand("{fold}{name}_{build}_stats.html", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME)
     envmodules:
         "biology",
-        "userspace"
+        "userspace",
+        "gcc",
+        "lapack",
+        "jags",
+        "proj",
+        "geos/3.11.2",
         "R"
+    conda:
+        CONFIG_FOLDER + "yml/pandoc.yml"
     script:
         CONFIG_FOLDER + "Rmd/species_distrib.Rmd"
 
