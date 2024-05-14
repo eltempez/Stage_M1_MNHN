@@ -1,24 +1,21 @@
 ---
-title: "species_distrib"
-output: html_document
-params:
-   rmd: "species_distrib.Rmd"
+title: "Species distribution `r sample_name`"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE, results = 'hide', warning=FALSE)
+```
 
-install.packages("ggplot2", "tidyverse", "ggrepel", "scales", "dplyr", "paletteer")
+
+```{r}
 library(ggplot2)
 library(tidyverse)
 library(ggrepel)
 library(scales)
 library(dplyr)
 library(paletteer)
-```
 
-
-```{r}
 ##### Setting up #####
 # Functions
 get_sample_name <- function(file_path) {
@@ -27,8 +24,8 @@ get_sample_name <- function(file_path) {
 }
 
 # Read input files
-glob_metrics_file <- snakemake@input[[1]]
-species_file <- snakemake@input[[2]]
+glob_metrics_file <- commandArgs(trailingOnly=T)[1]
+species_file <- commandArgs(trailingOnly=T)[2]
 
 data <- read.table(glob_metrics_file, skip = 2, header = TRUE, sep = "\t")
 nb_reads <- read.table(glob_metrics_file, nrows = 1, sep =  "\t")[, 2]

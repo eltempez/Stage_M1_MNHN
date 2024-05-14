@@ -864,6 +864,8 @@ rule visualise_metrics:
         metagenome_infos = CONFIG_FOLDER + "metagenome_ncbi_id.txt"
     output:
         stats = expand("{fold}{name}_{build}_stats.html", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME)
+    params:
+        rmd = CONFIG_FOLDER + "Rmd/species_distrib.Rmd"
     envmodules:
         "biology",
         "userspace",
@@ -872,11 +874,17 @@ rule visualise_metrics:
         "jags",
         "proj",
         "geos/3.11.2",
-        "R"
+        "R",
+        "python/conda"
     conda:
-        CONFIG_FOLDER + "yml/pandoc.yml"
-    script:
-        CONFIG_FOLDER + "Rmd/species_distrib.Rmd"
+        CONFIG_FOLDER + "yml/visu_rmd.yml"
+    shell:
+        """
+        quarto render {params.rmd} 
+        """
+
+
+        
 
 
 

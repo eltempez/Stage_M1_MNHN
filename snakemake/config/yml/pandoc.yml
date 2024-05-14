@@ -1,6 +1,0 @@
-name: pandoc # conda environment name #conda env create --name pandoc --file=pandoc.yml
-channels:
-- bioconda
-- conda-forge
-dependencies:
-- pandoc
