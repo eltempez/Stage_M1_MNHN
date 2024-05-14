@@ -162,7 +162,8 @@ if config["use_bowtie"]:
 elif not config["use_bowtie"]:
     rule all:
         input:
-            stats = expand("{fold}{name}_{build}_stats.html", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME)
+            visu = expand("{fold}{name}_{build}_krona_unmapped.html", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME),
+            glob_metrics = expand("{fold}{name}_{build}_global_metrics.txt", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME)
 
 
 
@@ -597,7 +598,7 @@ if config["use_bowtie"]:
         input:
             sam = expand("{fold}{name}_{build}.sam", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME)
         output:
-            unmap = expand("{fold}unmapped/{name}_{build}.unmapped.txt", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME)
+            unmap = expand("{fold}unmapped/{name}_{build}_unmapped.txt", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME)
         envmodules:
             "biology",
             "samtools"
@@ -613,10 +614,10 @@ if config["use_bowtie"]:
             input:
                 r1 = expand("{fold}genome_data/fq_clean/{name}_clean_R1.fq.gz", fold = OUTPUT_FOLD, name = R1_NAME),
                 r2 = expand("{fold}genome_data/fq_clean/{name}_clean_R2.fq.gz", fold = OUTPUT_FOLD, name = R1_NAME),
-                unmap = expand("{fold}unmapped/{name}_{build}.unmapped.txt", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME)
+                unmap = expand("{fold}unmapped/{name}_{build}_unmapped.txt", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME)
             output:
-                unmap_r1 = expand("{fold}unmapped/{name}_{build}.unmapped_R1.fasta", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME),
-                unmap_r2 = expand("{fold}unmapped/{name}_{build}.unmapped_R2.fasta", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME)
+                unmap_r1 = expand("{fold}unmapped/{name}_{build}_unmapped_R1.fasta", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME),
+                unmap_r2 = expand("{fold}unmapped/{name}_{build}_unmapped_R2.fasta", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME)
             conda:
                 CONFIG_FOLDER + "yml/seqtk.yml"
             shell:
@@ -629,52 +630,16 @@ if config["use_bowtie"]:
         rule sort_unmapped:
             input:
                 r1 = expand("{fold}genome_data/fq_clean/{name}_clean_R1.fq.gz", fold = OUTPUT_FOLD, name = R1_NAME),
-                unmap = expand("{fold}unmapped/{name}_{build}.unmapped.txt", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME)
+                unmap = expand("{fold}unmapped/{name}_{build}_unmapped.txt", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME)
             output:
-                unmap_r1 = expand("{fold}unmapped/{name}_{build}.unmapped_R1.fasta", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME)
+                unmap_r1 = expand("{fold}unmapped/{name}_{build}_unmapped_R1.fasta", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME)
             conda:
                 CONFIG_FOLDER + "yml/seqtk.yml"
             shell:
                 """
                 echo "sorting unmapped reads..."
                 seqtk subseq {input.r1} {input.unmap} | seqtk seq -a - > {output.unmap_r1}
-                """
-
-    # run unmapped reads through Kraken2
-    if is_paired:
-        rule kraken_unmapped:
-            input:
-                unmap_r1 = expand("{fold}unmapped/{name}_{build}.unmapped_R1.fasta", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME),
-                unmap_r2 = expand("{fold}unmapped/{name}_{build}.unmapped_R2.fasta", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME)
-            output:
-                report = expand("{fold}unmapped/kraken_rescue_report.k2report", fold = OUTPUT_FOLD),
-                out = expand("{fold}unmapped/kraken_rescue_output.kraken2", fold = OUTPUT_FOLD)
-            params:
-                kraken_library = KRAKEN_LIB_UNMAP
-            conda:
-                CONFIG_FOLDER + "yml/kraken2.yml"
-            shell:
-                """
-                echo "aligning unmapped reads..."
-                kraken2 --db {params.kraken_library} --threads 8 --report {output.report} --report-minimizer-data --paired {input.unmap_r1} {input.unmap_r2} > {output.out}
-                """
-    else:
-        rule kraken_unmapped:
-            input:
-                unmap_r1 = expand("{fold}unmapped/{name}_{build}.unmapped_R1.fasta", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME)
-            output:
-                report = expand("{fold}unmapped/kraken_rescue_report.k2report", fold = OUTPUT_FOLD),
-                out = expand("{fold}unmapped/kraken_rescue_output.kraken2", fold = OUTPUT_FOLD)
-            params:
-                kraken_library = KRAKEN_LIB_UNMAP
-            conda:
-                CONFIG_FOLDER + "yml/kraken2.yml"
-            shell:
-                """
-                echo "aligning unmapped reads..."
-                kraken2 --db {params.kraken_library} --threads 8 --report {output.report} --report-minimizer-data {input.unmap_r1} > {output.out}
-                """
-                
+                """                
 
     ## global metrics
     rule global_metrics:
@@ -765,8 +730,8 @@ elif not config["use_bowtie"]:
             output:
                 report = expand("{fold}mapped/kraken_report.k2report", fold = OUTPUT_FOLD),
                 out = expand("{fold}mapped/kraken_output.kraken2", fold = OUTPUT_FOLD),
-                unmap_r1 = expand("{fold}unmapped/{name}_{build}_unmapped_1.fastq", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME),
-                unmap_r2 = expand("{fold}unmapped/{name}_{build}_unmapped_2.fastq", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME)
+                unmap_r1_fa = expand("{fold}unmapped/{name}_{build}_unmapped_R1.fasta", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME),
+                unmap_r2_fa = expand("{fold}unmapped/{name}_{build}_unmapped_R2.fasta", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME)
             params:
                 kefir_library = kraken_library_folder(),
                 name = R1_NAME, 
@@ -777,6 +742,10 @@ elif not config["use_bowtie"]:
                 UNMAP={params.folder}unmapped/{params.name}_{params.build}_unmapped#.fastq
                 echo "aligning with kraken2..."
                 kraken2 --db {params.kefir_library} --threads 8 --report {output.report} --report-minimizer-data --paired --unclassified-out $UNMAP {input.r1} {input.r2} > {output.out}
+                # fastq to fasta
+                sed -n '1~4s/^@/>/p;2~4p' {params.folder}unmapped/{params.name}_{params.build}_unmapped_1.fastq > {output.unmap_r1_fa}
+                sed -n '1~4s/^@/>/p;2~4p' {params.folder}unmapped/{params.name}_{params.build}_unmapped_2.fastq > {output.unmap_r2_fa}
+                rm {params.folder}unmapped/{params.name}_{params.build}_unmapped*.fastq
                 """
     
     else:
@@ -794,11 +763,14 @@ elif not config["use_bowtie"]:
             output:
                 report = expand("{fold}mapped/kraken_report.k2report", fold = OUTPUT_FOLD),
                 out = expand("{fold}mapped/kraken_output.kraken2", fold = OUTPUT_FOLD),
-                unmap_r1 = expand("{fold}unmapped/{name}_{build}_unmapped.fastq", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME)
+                unmap_r1_fa = expand("{fold}unmapped/{name}_{build}_unmapped.fasta", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME)
             shell:
                 """
                 echo "aligning with kraken2..."
                 kraken2 --db {params.kefir_library} --threads 8 --report {output.report} --report-minimizer-data --unclassified-out {params.folder}unmapped/{params.name}_{params.build}_unmapped.fastq {input.r1} > {output.out}
+                # fastq to fasta
+                sed -n '1~4s/^@/>/p;2~4p' {params.folder}unmapped/{params.name}_{params.build}_unmapped.fastq > {output.unmap_r1_fa}
+                rm {params.folder}unmapped/{params.name}_{params.build}_unmapped.fastq
                 """
 
     ## Analysis per species
@@ -857,7 +829,11 @@ elif not config["use_bowtie"]:
                 fi
             done
             """
-            
+
+
+##################################
+########## COMMON RULES ##########
+##################################      
 rule visualise_metrics:
     input:
         glob_metrics = expand("{fold}{name}_{build}_global_metrics.txt", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME),
@@ -880,14 +856,61 @@ rule visualise_metrics:
         CONFIG_FOLDER + "yml/visu_rmd.yml"
     shell:
         """
-        quarto render {params.rmd} 
+        R -e "rmarkdown::render('{params.rmd}', output_file='{output.stats}')" --args "{input.glob_metrics}" "{input.metagenome_infos}"
         """
 
 
-        
+# run unmapped reads through Kraken2
+if is_paired:
+    rule kraken_unmapped:
+        input:
+            unmap_r1 = expand("{fold}unmapped/{name}_{build}_unmapped_R1.fasta", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME),
+            unmap_r2 = expand("{fold}unmapped/{name}_{build}_unmapped_R2.fasta", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME)
+        output:
+            report = expand("{fold}unmapped/kraken_rescue_report.k2report", fold = OUTPUT_FOLD),
+            out = expand("{fold}unmapped/kraken_rescue_output.kraken2", fold = OUTPUT_FOLD)
+        params:
+            kraken_library = KRAKEN_LIB_UNMAP
+        conda:
+            CONFIG_FOLDER + "yml/kraken2.yml"
+        shell:
+            """
+            echo "aligning unmapped reads..."
+            kraken2 --db {params.kraken_library} --threads 8 --report {output.report} --report-minimizer-data --paired {input.unmap_r1} {input.unmap_r2} > {output.out}
+            """
+else:
+    rule kraken_unmapped:
+        input:
+            unmap_r1 = expand("{fold}unmapped/{name}_{build}_unmapped_R1.fasta", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME)
+        output:
+            report = expand("{fold}unmapped/kraken_rescue_report.k2report", fold = OUTPUT_FOLD),
+            out = expand("{fold}unmapped/kraken_rescue_output.kraken2", fold = OUTPUT_FOLD)
+        params:
+            kraken_library = KRAKEN_LIB_UNMAP
+        conda:
+            CONFIG_FOLDER + "yml/kraken2.yml"
+        shell:
+            """
+            echo "aligning unmapped reads..."
+            kraken2 --db {params.kraken_library} --threads 8 --report {output.report} --report-minimizer-data {input.unmap_r1} > {output.out}
+            """
 
 
-
+rule krona_report:
+    input:
+        report = expand("{fold}unmapped/kraken_rescue_report.k2report", fold = OUTPUT_FOLD)
+    output:
+        visu = expand("{fold}{name}_{build}_krona_unmapped.html", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME)
+    params:
+        krep2kro = CONFIG_FOLDER + "py/kreport2krona.py",
+        krona_report = expand("{fold}unmapped/krona_rescue_report.txt", fold = OUTPUT_FOLD)
+    conda:
+        CONFIG_FOLDER + "yml/krona.yml"
+    shell:
+        """
+        python {params.krep2kro} -r {input.report} -o {params.krona_report} --no-intermediate-ranks
+        ktImportText {params.krona_report} -o {output.visu}
+        """
 
 
 

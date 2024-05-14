@@ -1,5 +1,5 @@
 **Cette routine snakemake est à effectuer sur le cluster de calcul, avec comme ligne de commande :
->snakemake -s <chemin d'accès au fichier remapping_illu.smk> --core 1 --use-envmodules --use-conda --configfile <chemin d'accès au fichier de configuration>**
+>snakemake -s <chemin d'accès au fichier remapping_illu.smk> --core 1 --use-envmodules --use-conda --configfile <chemin d'accès au fichier de configuration>** --directory /mnt/beegfs/<username>
 
 Prérequis : besoin d'activer snakemake à l'aide de la commande :
 >conda activate snakemake7
