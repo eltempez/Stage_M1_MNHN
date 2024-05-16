@@ -35,7 +35,6 @@ sample_name <- get_sample_name(glob_metrics_file)
 species_info <- read.table(species_file, sep = "\t")
 colnames(species_info) <- c("library", "ncbi", "species", "type")
 ```
-
 # **sample : `r sample_name`**
 
 $$\\[0.5in]$$
@@ -44,11 +43,12 @@ $$\\[0.5in]$$
 ##### Graphs #####
 ## Number of reads cleaned and aligned
 # create dataframe
+nb_low_qual <- nb_reads - nb_reads_clean
 nb_aligned_reads <- round(sum(data$Percents.read.coverage) / 100 * nb_reads_clean)
 data_1 <- data.frame("condition" = c("low_qual", "unaligned", "aligned"),
-                "nb" = c(nb_reads - nb_reads_clean,
-                         nb_reads_clean - nb_aligned_reads,
-                         nb_aligned_reads))
+                     "nb" = c(nb_low_qual,
+                              nb_reads - (nb_low_qual + nb_aligned_reads),
+                              nb_aligned_reads))
 # add percents
 data_1 %>%
   arrange(desc(nb)) %>%
@@ -65,9 +65,9 @@ ggplot(data_1, aes(x = "", y = nb, fill = fct_inorder(condition))) +
   ggtitle("Global read distribution") +
   coord_polar("y", start = 0) +
   scale_fill_manual(name = "Percents of reads",
-                    values = c("low_qual" = "#5B5B5B", 
-                               "unaligned" = "#8D6767", 
-                               "aligned" = "#5C7C6C"),
+                    values = c("low_qual" = "#737373", 
+                               "unaligned" = "#873939", 
+                               "aligned" = "#398772"),
                     labels = c("low_qual" = "low quality", 
                                "unaligned" = "unmapped", 
                                "aligned" = "mapped"))

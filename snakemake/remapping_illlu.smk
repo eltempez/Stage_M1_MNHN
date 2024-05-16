@@ -154,8 +154,7 @@ def kraken_library_folder():
 if config["use_bowtie"]:
     rule all:
         input:
-            report_kraken = expand("{fold}unmapped/kraken_rescue_report.k2report", fold = OUTPUT_FOLD),
-            out_kraken = expand("{fold}unmapped/kraken_rescue_output.kraken2", fold = OUTPUT_FOLD),
+            visu = expand("{fold}{name}_{build}_krona_unmapped.html", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME),
             covfiles = get_covfiles,
             svgfiles = get_svgfiles,
             stats = expand("{fold}{name}_{build}_stats.html", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME)
@@ -163,7 +162,7 @@ elif not config["use_bowtie"]:
     rule all:
         input:
             visu = expand("{fold}{name}_{build}_krona_unmapped.html", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME),
-            glob_metrics = expand("{fold}{name}_{build}_global_metrics.txt", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME)
+            stats = expand("{fold}{name}_{build}_stats.html", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME)
 
 
 
@@ -842,16 +841,6 @@ rule visualise_metrics:
         stats = expand("{fold}{name}_{build}_stats.html", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME)
     params:
         rmd = CONFIG_FOLDER + "Rmd/species_distrib.Rmd"
-    envmodules:
-        "biology",
-        "userspace",
-        "gcc",
-        "lapack",
-        "jags",
-        "proj",
-        "geos/3.11.2",
-        "R",
-        "python/conda"
     conda:
         CONFIG_FOLDER + "yml/visu_rmd.yml"
     shell:
