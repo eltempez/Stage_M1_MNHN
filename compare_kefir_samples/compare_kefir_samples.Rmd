@@ -1,0 +1,130 @@
+---
+title: 'Species distribution across samples'
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: html_document
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, results = 'hide', warning=FALSE, message=FALSE, out.width = "100%")
+```
+
+
+```{r}
+library(tidyverse)
+library(scales)
+library(dplyr)
+library(paletteer)
+library(ggplot2)
+library(ggthemes)
+
+
+##### Setting up #####
+# Functions
+get_sample_name <- function(file_path) {
+  species_name <- gsub(".*/([^/]+)_global_metrics\\.txt", "\\1", file_path)
+  return(species_name)
+}
+
+# Parser
+args <- commandArgs()
+
+nb_m <- 0
+files <- c()
+for (i in 1:length(args)) {
+  if (args[i] == "-i") {
+    files <- c(files, args[i + 1])
+  } else if (args[i] == "-m") {
+    nb_m <- nb_m + 1
+    species_file <- args[i + 1]
+  } 
+}
+
+if (length(files) == 0) {
+  stop("At least one golbal metrics file must be given with flag -i")
+}
+if (nb_m == 0) {
+  stop("The metagenome file must be given with flag -m")
+} else if (nb_m > 1) {
+  stop("Only one metagenome file must be given with flag -m")
+}
+
+
+# Read files
+species_info <- read.table(species_file, sep = "\t")
+colnames(species_info) <- c("library", "ncbi", "species", "type")
+
+global_data <- data.frame()
+for (file in files) {
+  sample_name <- get_sample_name(file)
+  
+  file_table <- read.table(file, skip = 2, header = TRUE, sep = "\t")
+  nb_aligned_reads <- sum(file_table$Number.reads)
+  data <- data.frame("library" = file_table$library,
+                     "n_reads" = file_table$Number.reads,
+                     "p_reads" = round((file_table$Number.reads / nb_aligned_reads * 100), 1),
+                     "sample" = rep(sample_name, length(file_table$library)))
+  
+  global_data <- rbind(global_data, data)
+}
+
+# add species names
+global_data <- merge(species_info, global_data, by = "library")
+```
+
+```{r}
+##### Graphs #####
+## Barplot
+# arrange data in type and % order
+global_data %>%
+  arrange(sample, type, desc(p_reads)) -> data_1
+
+# set up colors
+n <- nrow(data_1)/length(files)
+lacto_species <- data_1[which(data_1[1:n, "type"] == "lacto"), "species"]
+aceto_species <- data_1[which(data_1[1:n, "type"] == "aceto"), "species"]
+yeast_species <- data_1[which(data_1[1:n, "type"] == "yeast"), "species"]
+other_species <- data_1[which(data_1[1:n, "type"] == "other"), "species"]
+lacto_colors <- paletteer::paletteer_dynamic("cartography::red.pal", length(lacto_species), -1)
+names(lacto_colors) <- lacto_species
+aceto_colors <- paletteer::paletteer_dynamic("cartography::blue.pal", length(aceto_species), -1)
+names(aceto_colors) <- aceto_species
+yeast_colors <- paletteer::paletteer_dynamic("cartography::green.pal", length(yeast_species), -1)
+names(yeast_colors) <- yeast_species
+other_colors <- paletteer::paletteer_dynamic("cartography::purple.pal", length(other_species), -1)
+names(other_colors) <- other_species
+
+# plot
+ggplot(data_1, aes(x = sample, y = p_reads, fill = fct_inorder(species))) +
+  geom_col(alpha = 1) +
+  scale_fill_manual(values = c(aceto_colors, lacto_colors, yeast_colors, other_colors)) +
+  guides(fill = guide_legend(title = "species")) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(x = "", y = "%", 
+       title = "Proportion of reads mapped on each species")
+```
+
+
+```{r}
+## Dotplot
+global_data %>%
+  arrange(desc(n_reads)) -> data_2
+
+ggplot(data_2, aes(x = sample, y = fct_inorder(species), size = n_reads, color = type)) +
+  geom_point(alpha = 0.85) +
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.text.x = element_text(angle = 45, hjust = 1)) +
+  scale_colour_manual(labels = c("aceto" = "Acetobacteraceae",
+                                 "lacto" = "Lactobacillales",
+                                 "yeast" = "Yeasts",
+                                 "other" = "Other"),
+                      values = c("aceto" = "#115379FF",
+                                 "lacto" = "#7C000CFF",
+                                 "yeast" = "#186D2EFF",
+                                 "other" = "#76388AFF")) +
+  scale_size_area(labels = comma, name = "number of reads") +
+  labs(x = "", y = "", 
+       title = "Number of reads mapped on each species")
+```
+
+

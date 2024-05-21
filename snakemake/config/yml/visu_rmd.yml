@@ -10,3 +10,4 @@ dependencies:
 - r-scales
 - r-dplyr
 - r-paletteer
+- r-ggthemes
