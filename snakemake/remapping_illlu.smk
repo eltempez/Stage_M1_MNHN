@@ -348,7 +348,8 @@ if config["use_bowtie"]:
                 species_file = SPECIES_LST,
                 sam = expand("{fold}{name}_{build}.sam", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME)
             output:
-                directory(OUTPUT_FOLD + "mapped/aligned/"),
+                directory(OUTPUT_FOLD + "mapped/aligned/")
+            threads: 16
             envmodules:
                 "biology",
                 "samtools"
@@ -397,6 +398,7 @@ if config["use_bowtie"]:
                 r1 = expand("{fold}genome_data/fq_clean/{name}_clean_R1.fq.gz", fold = OUTPUT_FOLD, name = R1_NAME)
             output:
                 directory(OUTPUT_FOLD + "mapped/aligned/")
+            threads: 16
             params: 
                 name = R1_NAME, 
                 build = BUILD_NAME,
@@ -427,7 +429,7 @@ if config["use_bowtie"]:
                     samtools view -F 4 --verbosity 2 {params.folder}out | awk -F "\t" '{{print $1}}' | sort > $ALIGNED
                     # remove temporary file
                     rm {params.folder}out
-
+                    
                     # extract sequences
                     seqtk subseq {input.r1} $ALIGNED > $ALIGNED_SEQ
                 done
@@ -514,19 +516,24 @@ if config["use_bowtie"]:
                 CONCORD={params.folder}mapped/aligned/{params.name}_{params.build}_concSH_${{sp}}.txt
                 REMAP_BAM={params.folder}mapped/bam/{params.name}_{params.build}_concSH_${{sp}}.bam
 
-                # filter original sam with concordant reads only for the current species (save in temporaty file)
-                java -jar $PICARD FilterSamReads --VERBOSITY ERROR --QUIET true -I {input.sam} -O {params.folder}int.sam -FILTER includeReadList -READ_LIST_FILE $CONCORD 2> {params.folder}log.txt
-                
-                # keep only headers with contigs regarding the current species (save in temporaty file)
-                awk -F "\t" -v s="$sp" '{{split($2, a, ":"); split(a[2],b,"_"); if ((a[1] == "SN") && (b[1] == s)) print $0; else if (a[1] != "SN") print $0}}' {params.folder}int.sam > {params.folder}int2.sam
-                # sort and save in bam file
-                samtools view -b {params.folder}int2.sam | samtools sort > $REMAP_BAM;
-                # delete temporary files
-                rm {params.folder}int.sam {params.folder}int2.sam
-                # index bam file
-                samtools index $REMAP_BAM
+                # if species is present
+                if [ $(cat $CONCORD | wc -l) -ne 0 ]; then
 
-                rm {params.folder}log.txt
+                    # filter original sam with concordant reads only for the current species (save in temporaty file)
+                    java -jar $PICARD FilterSamReads --VERBOSITY ERROR --QUIET true -I {input.sam} -O {params.folder}int.sam -FILTER includeReadList -READ_LIST_FILE $CONCORD 2> {params.folder}log.txt
+                    
+                    # keep only headers with contigs regarding the current species (save in temporaty file)
+                    awk -F "\t" -v s="$sp" '{{split($2, a, ":"); split(a[2],b,"_"); if ((a[1] == "SN") && (b[1] == s)) print $0; else if (a[1] != "SN") print $0}}' {params.folder}int.sam > {params.folder}int2.sam
+                    # sort and save in bam file
+                    samtools view -b {params.folder}int2.sam | samtools sort > $REMAP_BAM;
+                    # delete temporary files
+                    rm {params.folder}int.sam {params.folder}int2.sam
+                    # index bam file
+                    samtools index $REMAP_BAM
+
+                    rm {params.folder}log.txt
+
+                fi
             done
             """
 
@@ -566,27 +573,31 @@ if config["use_bowtie"]:
                 COVFILE={params.folder}mapped/coverage/{params.name}_{params.build}_concSH_${{sp}}.coverage
                 COVIMG={params.folder}mapped/coverage/{params.name}_{params.build}_concSH_${{sp}}.svg
 
-                # create reference genome data (.fa.fai file)
-                samtools faidx $GENOME
-                # create .fa.bed file
-                awk 'BEGIN {{FS="\t"}} {{print $1 FS "0" FS $2}}' $GENOME.fai > $GENOME.bed
-                # calculate coverage statistics
-                jvarkit bamstats04 -B $GENOME.bed $REMAP_BAM > $COVFILE 2> {params.folder}log.txt
-                # calculate median
-                MEDCOV=$(cat $COVFILE | sed '1d' | awk -F "\t" '{{print $9}}'| sort -k 1n,1 | tail -n1| cut -d "." -f 1)
-                # if median = 0, median = 5
-                if  [ $MEDCOV -eq 0 ]
-                then
-                MEDCOV=5
-                fi
-                # calculate parameters
-                RATIO=$((MEDCOV * 30 / 100))
-                MEDGRAPH=$(($MEDCOV + $RATIO))
-                # create graph
-                java -jar $PICARD CreateSequenceDictionary -VERBOSITY ERROR -QUIET true -R $GENOME -O $GENOME.dict 2> {params.folder}log.txt
-                jvarkit wgscoverageplotter -C $MEDGRAPH -R $GENOME $REMAP_BAM -o $COVIMG 2> {params.folder}log.txt
+                # if species is present
+                if [ $(cat $CONCORD | wc -l) -ne 0 ]; then
 
-                rm {params.folder}log.txt
+                    # create reference genome data (.fa.fai file)
+                    samtools faidx $GENOME
+                    # create .fa.bed file
+                    awk 'BEGIN {{FS="\t"}} {{print $1 FS "0" FS $2}}' $GENOME.fai > $GENOME.bed
+                    # calculate coverage statistics
+                    jvarkit bamstats04 -B $GENOME.bed $REMAP_BAM > $COVFILE 2> {params.folder}log.txt
+                    # calculate median
+                    MEDCOV=$(cat $COVFILE | sed '1d' | awk -F "\t" '{{print $9}}'| sort -k 1n,1 | tail -n1| cut -d "." -f 1)
+                    # if median = 0, median = 5
+                    if  [ $MEDCOV -eq 0 ]
+                    then
+                    MEDCOV=5
+                    fi
+                    # calculate parameters
+                    RATIO=$((MEDCOV * 30 / 100))
+                    MEDGRAPH=$(($MEDCOV + $RATIO))
+                    # create graph
+                    java -jar $PICARD CreateSequenceDictionary -VERBOSITY ERROR -QUIET true -R $GENOME -O $GENOME.dict 2> {params.folder}log.txt
+                    jvarkit wgscoverageplotter -C $MEDGRAPH -R $GENOME $REMAP_BAM -o $COVIMG 2> {params.folder}log.txt
+
+                    rm {params.folder}log.txt
+                fi
             done
             """
 
@@ -845,7 +856,7 @@ rule visualise_metrics:
         CONFIG_FOLDER + "yml/visu_rmd.yml"
     shell:
         """
-        R -e "rmarkdown::render('{params.rmd}', output_file='{output.stats}')" --args "{input.glob_metrics}" "{input.metagenome_infos}"
+        R -e "rmarkdown::render('{params.rmd}', output_file='{output.stats}')" --args "{input.glob_metrics}" "{input.metagenome_infos}"  
         """
 
 
@@ -884,10 +895,29 @@ else:
             kraken2 --db {params.kraken_library} --threads 8 --report {output.report} --report-minimizer-data {input.unmap_r1} > {output.out}
             """
 
+rule bracken_unmapped:
+    input:
+        report_kraken = expand("{fold}unmapped/kraken_rescue_report.k2report", fold = OUTPUT_FOLD)
+    output: 
+        report_bracken = expand("{fold}unmapped/bracken_rescue_report.txt", fold = OUTPUT_FOLD),
+        out_bracken = expand("{fold}unmapped/bracken_rescue_output.bracken", fold = OUTPUT_FOLD)
+    params:
+        library = KRAKEN_LIB_UNMAP,
+        read_lg = READ_LG
+    threads: 10
+    conda:
+        CONFIG_FOLDER + "yml/kraken2.yml"
+    shell:
+        """
+        # build bracken library
+        bracken-build -d {params.library} -l {params.read_lg} -t {threads}
+        # calculate species abundance
+        bracken -d {params.library} -i {input.report_kraken} -r {params.read_lg} -t 50 -o {output.out_bracken} -w {output.report_bracken}
+        """
 
 rule krona_report:
     input:
-        report = expand("{fold}unmapped/kraken_rescue_report.k2report", fold = OUTPUT_FOLD)
+        report_bracken = expand("{fold}unmapped/bracken_rescue_report.txt", fold = OUTPUT_FOLD)
     output:
         visu = expand("{fold}{name}_{build}_krona_unmapped.html", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME)
     params:
