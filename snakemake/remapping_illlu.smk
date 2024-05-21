@@ -497,6 +497,7 @@ if config["use_bowtie"]:
             name = R1_NAME, 
             build = BUILD_NAME,
             folder = OUTPUT_FOLD
+        threads: 16
         envmodules:
             "userspace",
             "biology",
@@ -558,6 +559,7 @@ if config["use_bowtie"]:
             build = BUILD_NAME,
             folder = OUTPUT_FOLD,
             species_folder = OUTPUT_FOLD + "genome_data/fa/"
+        threads: 16
         shell:
             """
             mkdir -p {output[0]}
@@ -574,7 +576,7 @@ if config["use_bowtie"]:
                 COVIMG={params.folder}mapped/coverage/{params.name}_{params.build}_concSH_${{sp}}.svg
 
                 # if species is present
-                if [ $(cat $CONCORD | wc -l) -ne 0 ]; then
+                if [ -f "$REMAP_BAM" ]; then
 
                     # create reference genome data (.fa.fai file)
                     samtools faidx $GENOME

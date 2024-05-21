@@ -16,6 +16,7 @@ library(ggrepel)
 library(scales)
 library(dplyr)
 library(paletteer)
+library(ggthemes)
 
 ##### Setting up #####
 # Functions
@@ -84,14 +85,31 @@ data_2 <- merge(species_info,
 data_2 %>%
   arrange(type, desc(Percents.read.coverage)) -> data_2
 
+
+
 # Barplots
+# set up colors
+lacto_species <- data_2[which(data_2[, "type"] == "lacto"), "species"]
+aceto_species <- data_2[which(data_2[, "type"] == "aceto"), "species"]
+yeast_species <- data_2[which(data_2[, "type"] == "yeast"), "species"]
+other_species <- data_2[which(data_2[, "type"] == "other"), "species"]
+lacto_colors <- paletteer::paletteer_dynamic("cartography::red.pal", length(lacto_species), -1)
+names(lacto_colors) <- lacto_species
+aceto_colors <- paletteer::paletteer_dynamic("cartography::blue.pal", length(aceto_species), -1)
+names(aceto_colors) <- aceto_species
+yeast_colors <- paletteer::paletteer_dynamic("cartography::green.pal", length(yeast_species), -1)
+names(yeast_colors) <- yeast_species
+other_colors <- paletteer::paletteer_dynamic("cartography::purple.pal", length(other_species), -1)
+names(other_colors) <- other_species
+
+# plot
 ggplot(data_2, aes(x = type, y = Percents.read.coverage, fill = fct_inorder(species))) +
   geom_bar(stat = "identity", position = position_dodge(preserve = "single")) +
-  theme(plot.title = element_text(hjust = 0.5),
-        axis.text.x = element_text(angle = 45, hjust = 1)) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
   labs(x = "", y = "%", 
        title = "Proportion of reads mapped on each species") +
-  scale_fill_viridis_d(option = "D", name = "species") +
+  guides(fill = guide_legend(title = "species")) +
+  scale_fill_manual(values = c(aceto_colors, lacto_colors, yeast_colors, other_colors)) +
   scale_x_discrete(labels = c("aceto" = "Acetobacteraceae", 
                               "lacto" = "Lactobacillales", 
                               "yeast" = "Yeasts",
@@ -109,6 +127,7 @@ ggplot(data_2, aes(x = type, y = Percents.read.coverage, fill = fct_inorder(spec
        title = "") +
   scale_fill_viridis_d(option = "D") +
   guides(fill = FALSE) +
+  scale_fill_manual(values = c(aceto_colors, lacto_colors, yeast_colors, other_colors)) +
   scale_x_discrete(labels = c("aceto" = "Acetobacteraceae", 
                               "lacto" = "Lactobacillales", 
                               "yeast" = "Yeasts",
@@ -123,18 +142,21 @@ data_3 <- merge(species_info,
                 data[, c("library", "Percents.read.coverage", "Number.reads")], 
                 by = "library")
 data_3 %>%
-  arrange(Percents.read.coverage) -> data_3
+  arrange(desc(Percents.read.coverage)) -> data_3
 
 ggplot(data_3, aes(x = "", y = fct_inorder(species), size = Number.reads, color = type)) +
-  geom_point() +
+  geom_point(alpha = 0.85) +
   theme(plot.title = element_text(hjust = 0.5)) +
-  paletteer::scale_colour_paletteer_d("ochRe::lorikeet",
-                                      labels = c("aceto" = "Acetobacteraceae", 
-                                                 "lacto" = "Lactobacillales", 
-                                                 "yeast" = "Yeasts",
-                                                 "other" = "Other")) +
-  scale_size_continuous(labels = comma, name = "number of reads") +
+  scale_colour_manual(labels = c("aceto" = "Acetobacteraceae",
+                                 "lacto" = "Lactobacillales",
+                                 "yeast" = "Yeasts",
+                                 "other" = "Other"),
+                      values = c("aceto" = "#115379FF",
+                                 "lacto" = "#7C000CFF",
+                                 "yeast" = "#186D2EFF",
+                                 "other" = "#76388AFF")) +
+  scale_size_area(labels = comma, name = "number of reads") +
   labs(x = "", y = "species", 
-       title = "Number of reads mapped on each species")
+       title = "Proportion of reads mapped on each species")
 ```
 

@@ -7,3 +7,4 @@ The conda environment must first be activated (and installed if needed with the 
 The command line is : R -e "rmarkdown::render('<rmarkdown script>', output_file='<output file name>')" -i <metrics file 1> -i <metrics file 2> -m <metagenome file>
 
 Every argument which doesn't follow a -i or -m flag will be ignored. If no output_file is specified, the default will be compare_kefir_samples.html.
+/!\ the -i files must be named <sample>_global_metrics.txt, with <sample> being 20 characters at most, so that the graphs don't become cropped
