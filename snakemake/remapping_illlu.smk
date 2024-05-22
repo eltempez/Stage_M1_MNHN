@@ -46,15 +46,22 @@ def bash_dict(dict):
         printed_dict += f"['{key}']={val} "
     return printed_dict[:-1]
 
+# get closer read length for bracken library
+def bracken_read_lg(lg):
+    lengths = list(range(100, 351, 50))
+    closest = min(lengths, key=lambda x: abs(x - lg))
+    return closest
+
+
 
 ## Filenames
 # inputs
 KRAKEN_LIB_UNMAP = check_slash(config["kraken_library_unmapped"])
 KRAKEN_LIB = check_slash(config["kraken_library"])
 BOWTIE_INDEX = check_slash(config["bowtie_index"])
+READ_LG = config["read_lg"]
 R1 = config["r1"]
 R2 = config["r2"]
-READ_LG = config["read_lg"]
 SPECIES_FOLD = check_slash(config["folder_species"])
 OUTPUT_FOLD = check_slash(config["output_folder"])
 BUILD_NAME = config["build_name"]
@@ -858,7 +865,7 @@ rule visualise_metrics:
         CONFIG_FOLDER + "yml/visu_rmd.yml"
     shell:
         """
-        R -e "rmarkdown::render('{params.rmd}', output_file='{output.stats}')" --args "{input.glob_metrics}" "{input.metagenome_infos}"  
+        R -e "rmarkdown::render('{params.rmd}', output_file='{output.stats}')" --quiet --args "{input.glob_metrics}" "{input.metagenome_infos}"  
         """
 
 
@@ -905,7 +912,7 @@ rule bracken_unmapped:
         out_bracken = expand("{fold}unmapped/bracken_rescue_output.bracken", fold = OUTPUT_FOLD)
     params:
         library = KRAKEN_LIB_UNMAP,
-        read_lg = READ_LG
+        read_lg = bracken_read_lg(READ_LG)
     threads: 10
     conda:
         CONFIG_FOLDER + "yml/kraken2.yml"
@@ -929,7 +936,7 @@ rule krona_report:
         CONFIG_FOLDER + "yml/krona.yml"
     shell:
         """
-        python {params.krep2kro} -r {input.report} -o {params.krona_report} --no-intermediate-ranks
+        python {params.krep2kro} -r {input.report_bracken} -o {params.krona_report} --no-intermediate-ranks
         ktImportText {params.krona_report} -o {output.visu}
         """
 
