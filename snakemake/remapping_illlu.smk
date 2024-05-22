@@ -22,9 +22,11 @@ def get_prefix(file_path, is_paired_illumina = False):
 
 # for all folder paths : if doesn't end with "/", add it at the end
 def check_slash(folder_path):
-    if folder_path[-1] == "/" or folder_path == "":
-        return folder_path
-    return folder_path + "/"
+    if folder_path != "":
+        if folder_path[-1] == "/":
+            return folder_path
+        return folder_path + "/"
+    return folder_path
 
 # configuration folder
 CONFIG_FOLDER = check_slash(config["config_folder"])
@@ -782,7 +784,7 @@ elif not config["use_bowtie"]:
             output:
                 report = expand("{fold}mapped/kraken_report.k2report", fold = OUTPUT_FOLD),
                 out = expand("{fold}mapped/kraken_output.kraken2", fold = OUTPUT_FOLD),
-                unmap_r1_fa = expand("{fold}unmapped/{name}_{build}_unmapped.fasta", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME)
+                unmap_r1_fa = expand("{fold}unmapped/{name}_{build}_unmapped_R1.fasta", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME)
             shell:
                 """
                 echo "aligning with kraken2..."
