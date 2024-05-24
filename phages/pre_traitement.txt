@@ -1,0 +1,12 @@
+## Pré-traitement des données HiC - à partir du répertoire /home/eliotttempez/Documents/tests/phages/HiC/
+environnement conda env_HiC
+
+- concaténation du métagénome
+touch ./genome/ref_genome.fasta
+for filename in ./genome/*.fa; do
+    cat $filename >> ./genome/ref_genome.fasta
+done
+
+- alignement et matrice de contact
+hicstuff pipeline -t 8 --aligner minimap2 --force --plot --enzyme=100 --matfmt=graal --start-stage fastq -o ./hicstuff/ -g ./genome/ref_genome.fasta ./donnees/Kefir_MCF_30h_1.fastq.gz ./donnees/Kefir_MCF_30h_2.fastq.gz
+
