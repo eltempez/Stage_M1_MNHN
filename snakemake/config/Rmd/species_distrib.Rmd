@@ -29,7 +29,8 @@ get_sample_name <- function(file_path) {
 glob_metrics_file <- commandArgs(trailingOnly=T)[1]
 species_file <- commandArgs(trailingOnly=T)[2]
 
-data <- read.table(glob_metrics_file, skip = 2, header = TRUE, sep = "\t")
+data <- read.table(glob_metrics_file, skip = 3, header = FALSE, sep = "\t")
+colnames(data) <- c("library", "genome_length", "nb_mapped_reads", "nb_mapped_nt", "p_coverage")
 nb_reads <- read.table(glob_metrics_file, nrows = 1, sep =  "\t")[, 2]
 nb_reads_clean <- read.table(glob_metrics_file, nrows = 1, sep =  "\t", skip = 1)[, 2]
 sample_name <- get_sample_name(glob_metrics_file)
@@ -46,7 +47,7 @@ $$\\[0.5in]$$
 ## Number of reads cleaned and aligned
 # create dataframe
 nb_low_qual <- nb_reads - nb_reads_clean
-nb_aligned_reads <- round(sum(data$Percents.read.coverage) / 100 * nb_reads_clean)
+nb_aligned_reads <- round(sum(data$p_coverage) / 100 * nb_reads_clean)
 data_1 <- data.frame("condition" = c("low_qual", "unaligned", "aligned"),
                      "nb" = c(nb_low_qual,
                               nb_reads - (nb_low_qual + nb_aligned_reads),
@@ -80,10 +81,10 @@ $$\\[1in]$$
 ```{r}
 ## Species distribution
 data_2 <- merge(species_info, 
-                data[, c("library", "Percents.read.coverage", "Number.reads")], 
+                data[, c("library", "p_coverage", "nb_mapped_reads")], 
                 by = "library")
 data_2 %>%
-  arrange(type, desc(Percents.read.coverage)) -> data_2
+  arrange(type, desc(p_coverage)) -> data_2
 
 
 
@@ -103,7 +104,7 @@ other_colors <- paletteer::paletteer_dynamic("cartography::purple.pal", length(o
 names(other_colors) <- other_species
 
 # plot
-ggplot(data_2, aes(x = type, y = Percents.read.coverage, fill = fct_inorder(species))) +
+ggplot(data_2, aes(x = type, y = p_coverage, fill = fct_inorder(species))) +
   geom_bar(stat = "identity", position = position_dodge(preserve = "single")) +
   theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
   labs(x = "", y = "%", 
@@ -119,13 +120,12 @@ ggplot(data_2, aes(x = type, y = Percents.read.coverage, fill = fct_inorder(spec
 
 ```{r}
 # grouped by type of micro-organism
-ggplot(data_2, aes(x = type, y = Percents.read.coverage, fill = fct_inorder(species))) +
+ggplot(data_2, aes(x = type, y = p_coverage, fill = fct_inorder(species))) +
   geom_bar(stat = "identity") +
   theme(plot.title = element_text(hjust = 0.5),
         axis.text.x = element_text(angle = 45, hjust = 1)) +
   labs(x = "", y = "%", 
        title = "") +
-  scale_fill_viridis_d(option = "D") +
   guides(fill = FALSE) +
   scale_fill_manual(values = c(aceto_colors, lacto_colors, yeast_colors, other_colors)) +
   scale_x_discrete(labels = c("aceto" = "Acetobacteraceae", 
@@ -139,12 +139,12 @@ $$\\[1in]$$
 ```{r}
 # Dotplot with all 21 species
 data_3 <- merge(species_info, 
-                data[, c("library", "Percents.read.coverage", "Number.reads")], 
+                data[, c("library", "p_coverage", "nb_mapped_reads")], 
                 by = "library")
 data_3 %>%
-  arrange(desc(Percents.read.coverage)) -> data_3
+  arrange(desc(p_coverage)) -> data_3
 
-ggplot(data_3, aes(x = "", y = fct_inorder(species), size = Number.reads, color = type)) +
+ggplot(data_3, aes(x = "", y = fct_inorder(species), size = nb_mapped_reads, color = type)) +
   geom_point(alpha = 0.85) +
   theme(plot.title = element_text(hjust = 0.5)) +
   scale_colour_manual(labels = c("aceto" = "Acetobacteraceae",

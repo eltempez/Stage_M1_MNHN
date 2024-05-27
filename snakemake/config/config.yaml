@@ -3,8 +3,8 @@
 ######################
 ##### Input files #####
 # fastq files to analyse (leave r2 quotes empty if unpaired)
-r1: "/mnt/beegfs/projet-kefir/data/mcf/NG-32390_MCF_10h_lib666597_10168_3_1.fastq.gz"
-r2: "/mnt/beegfs/projet-kefir/data/mcf/NG-32390_MCF_10h_lib666597_10168_3_2.fastq.gz"
+r1: "/mnt/beegfs/projet-kefir/data_illumina/mcf/NG-32390_MCF_10h_lib666597_10168_3_1.fastq.gz"
+r2: "/mnt/beegfs/projet-kefir/data_illumina/mcf/NG-32390_MCF_10h_lib666597_10168_3_2.fastq.gz"
 # read length
 read_lg: 151
 
@@ -14,14 +14,14 @@ folder_species: "/mnt/beegfs/projet-kefir/metagenome/"
 
 ##### Output infos #####
 # output folder (leave empty quotes if you want the output in the folder from which you are launching the snakemake command line)
-output_folder: "/mnt/beegfs/etempez/remapping/outputs/"
+output_folder: "/mnt/beegfs/etempez/remapping/bowtie_paired/"
 # build name : name of the metagenome version
 build_name: "final_lib"
 
 
 ##### Configuration #####
 # name of folder with all .yml files + the metagenome_ncbi_id.txt file
-config_folder: "/mnt/beegfs/projet-kefir/scripts/mapping_illumina/config_files/"
+config_folder: "/trinity/home/etempez/remapping_scripts/config_files"
 
 
 ##### Bowtie and Kraken #####

@@ -449,7 +449,8 @@ if config["use_bowtie"]:
         input:
             species_file = SPECIES_LST,
             fastq = get_fastq_from_mapping(),
-            r1_clean = expand("{fold}genome_data/fq_clean/{name}_clean_R1.fq.gz", fold = OUTPUT_FOLD, name = R1_NAME)
+            r1_clean = expand("{fold}genome_data/fq_clean/{name}_clean_R1.fq.gz", fold = OUTPUT_FOLD, name = R1_NAME),
+            fa_files = expand("{fold}genome_data/fa/{species}.fa", fold = OUTPUT_FOLD, species = ALL_SPECIES)
         output:
             directory(OUTPUT_FOLD + "mapped/metrics/")
         params: 
@@ -477,6 +478,7 @@ if config["use_bowtie"]:
                 # filenames
                 CONCORD_R1={params.folder}mapped/aligned/{params.name}_{params.build}_concSH_${{sp}}_R1.fastq
                 METRIC={params.folder}mapped/metrics/${{sp}}_metrics.txt
+                FA_FILE={params.folder}genome_data/fa/${{sp}}.fa
 
                 # number of reads for the species
                 NB_READS_R1=$(($(wc -l < $CONCORD_R1) / 4))
@@ -486,9 +488,12 @@ if config["use_bowtie"]:
                     NB_READS=$NB_READS_R1
                 fi
 
+                # genome length
+                GEN_LEN=$(grep -v "^>" $FA_FILE | tr -d '\n' | wc -c)
+
                 # print in file
-                echo -e "library\tNumber reads\tNumber mapped nt\tPercents read coverage" > $METRIC
-                echo -e "$sp\t$NB_READS\t$(($NB_READS * {params.read_lg}))\t$(echo "scale=2; $NB_READS * 100 / $NB_TOTAL_READS_CLEAN" | bc)" >> $METRIC
+                echo -e "Library\tGenome length\tNumber mapped reads\tNumber mapped nt\tPercents read coverage" > $METRIC
+                echo -e "$sp\t$GEN_LEN\t$NB_READS\t$(($NB_READS * {params.read_lg}))\t$(echo "scale=2; $NB_READS * 100 / $NB_TOTAL_READS_CLEAN" | bc)" >> $METRIC
 
             done
                 """
@@ -698,7 +703,7 @@ if config["use_bowtie"]:
             echo -e "total reads\t$NB_TOTAL_READS" > {output.glob_metrics}
             echo -e "clean reads\t$NB_TOTAL_READS_CLEAN" >> {output.glob_metrics}
             
-            echo -e "library\tNumber reads\tNumber mapped nt\tPercents read coverage" >> {output.glob_metrics}
+            echo -e "Library\tGenome length\tNumber mapped reads\tNumber mapped nt\tPercents read coverage" >> {output.glob_metrics}
 
             # for each species
             species=$(cat {input.species_file})
@@ -800,10 +805,14 @@ elif not config["use_bowtie"]:
         input:
             r1_brut = R1,
             r1_clean = expand("{fold}genome_data/fq_clean/{name}_clean_R1.fq.gz", fold = OUTPUT_FOLD, name = R1_NAME),
-            report = expand("{fold}mapped/kraken_report.k2report", fold = OUTPUT_FOLD)
+            report = expand("{fold}mapped/kraken_report.k2report", fold = OUTPUT_FOLD),
+            fa_files = expand("{fold}genome_data/fa/{species}.fa", fold = OUTPUT_FOLD, species = ALL_SPECIES)
         output:
             glob_metrics = expand("{fold}{name}_{build}_global_metrics.txt", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME)
         params:
+            name = R1_NAME, 
+            build = BUILD_NAME,
+            folder = OUTPUT_FOLD,
             read_lg = READ_LG,
             tax_dict = bash_dict(get_ncbi_id_metagenome()),
             is_paired = int(is_paired)
@@ -831,11 +840,15 @@ elif not config["use_bowtie"]:
             echo -e "total reads\t$NB_TOTAL_READS" > {output.glob_metrics}
             echo -e "clean reads\t$NB_TOTAL_READS_CLEAN" >> {output.glob_metrics}
             
-            echo -e "library\tNumber reads\tNumber mapped nt\tPercents read coverage" >> {output.glob_metrics}
+            echo -e "Library\tGenome length\tNumber mapped reads\tNumber mapped nt\tPercents read coverage" >> {output.glob_metrics}
 
             # for each species
             for sp in "${{!dict[@]}}"; do
                 id="${{dict[$sp]}}"
+                FA_FILE={params.folder}genome_data/fa/${{sp}}.fa
+
+                # genome length
+                GEN_LEN=$(grep -v "^>" $FA_FILE | tr -d '\n' | wc -c)
 
                 # get line corresponding to the species
                 ligne=$(awk -F '\t' -v id="$id" '{{if ($7 == id) print}}' {input.report})
@@ -846,7 +859,7 @@ elif not config["use_bowtie"]:
                     else
                         nb_reads=$(echo "$ligne" | cut -f2)
                     fi
-                    echo -e "$sp\t$nb_reads\t$(($nb_reads * {params.read_lg}))\t$(echo "scale=2; $nb_reads * 100 / $NB_TOTAL_READS_CLEAN" | bc)" >> {output.glob_metrics}
+                    echo -e "$sp\t$GEN_LEN\t$nb_reads\t$(($nb_reads * {params.read_lg}))\t$(echo "scale=2; $nb_reads * 100 / $NB_TOTAL_READS_CLEAN" | bc)" >> {output.glob_metrics}
                 fi
             done
             """
