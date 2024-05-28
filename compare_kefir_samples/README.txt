@@ -1,4 +1,4 @@
-The program compare_kefir_samples.Rmd takes 2 types of inputs :
+The program compare_kefir_samples.Rmd takes 2 types of inputs (absolute path) :
 - global metrics files from the snakemake illumina remapping pipeline, following the flag -i (minimum one file, no maximum)
 - the metagenome_ncbi_id.txt file, following the flag -m
 

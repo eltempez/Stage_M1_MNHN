@@ -59,10 +59,12 @@ for (file in files) {
   sample_name <- get_sample_name(file)
   
   file_table <- read.table(file, skip = 2, header = TRUE, sep = "\t")
-  nb_aligned_reads <- sum(file_table$Number.reads)
+  colnames(file_table) <- c("library", "genome_length", "nb_mapped_reads", "nb_mapped_nt", "p_coverage")
+
+  nb_aligned_reads <- sum(file_table$nb_mapped_reads)
   data <- data.frame("library" = file_table$library,
-                     "n_reads" = file_table$Number.reads,
-                     "p_reads" = round((file_table$Number.reads / nb_aligned_reads * 100), 1),
+                     "n_reads" = file_table$nb_mapped_reads,
+                     "p_reads" = round((file_table$nb_mapped_reads / nb_aligned_reads * 100), 1),
                      "sample" = rep(sample_name, length(file_table$library)))
   
   global_data <- rbind(global_data, data)
