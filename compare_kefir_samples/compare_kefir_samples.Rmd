@@ -1,5 +1,5 @@
 ---
-title: 'Species distribution across samples'
+title: 'Species distribution across samples (normalised by genome length)'
 date: "`r format(Sys.time(), '%d %B, %Y')`"
 output: html_document
 ---
@@ -59,12 +59,12 @@ for (file in files) {
   sample_name <- get_sample_name(file)
   
   file_table <- read.table(file, skip = 2, header = TRUE, sep = "\t")
-  colnames(file_table) <- c("library", "genome_length", "nb_mapped_reads", "nb_mapped_nt", "p_coverage")
 
   nb_aligned_reads <- sum(file_table$nb_mapped_reads)
   data <- data.frame("library" = file_table$library,
                      "n_reads" = file_table$nb_mapped_reads,
-                     "p_reads" = round((file_table$nb_mapped_reads / nb_aligned_reads * 100), 1),
+                     "p_reads" = file_table$p_read_coverage_normalised,
+                     "genome_coverage" = file_table$genome_coverage,
                      "sample" = rep(sample_name, length(file_table$library)))
   
   global_data <- rbind(global_data, data)
@@ -110,9 +110,9 @@ ggplot(data_1, aes(x = sample, y = p_reads, fill = fct_inorder(species))) +
 ```{r}
 ## Dotplot
 global_data %>%
-  arrange(desc(n_reads)) -> data_2
+  arrange(desc(genome_coverage)) -> data_2
 
-ggplot(data_2, aes(x = sample, y = fct_inorder(species), size = n_reads, color = type)) +
+ggplot(data_2, aes(x = sample, y = fct_inorder(species), size = genome_coverage, color = type)) +
   geom_point(alpha = 0.85) +
   theme(plot.title = element_text(hjust = 0.5),
         axis.text.x = element_text(angle = 45, hjust = 1)) +
@@ -124,9 +124,9 @@ ggplot(data_2, aes(x = sample, y = fct_inorder(species), size = n_reads, color =
                                  "lacto" = "#7C000CFF",
                                  "yeast" = "#186D2EFF",
                                  "other" = "#76388AFF")) +
-  scale_size_area(labels = comma, name = "number of reads") +
+  scale_size_area(labels = comma, name = "number of times\nthe genome is covered") +
   labs(x = "", y = "", 
-       title = "Number of reads mapped on each species")
+       title = "Genome coverage")
 ```
 
 

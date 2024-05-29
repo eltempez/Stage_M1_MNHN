@@ -475,11 +475,12 @@ if config["use_bowtie"]:
             # for each species
             for sp in $species; do
                     
-                # filenames
+                ## filenames
                 CONCORD_R1={params.folder}mapped/aligned/{params.name}_{params.build}_concSH_${{sp}}_R1.fastq
                 METRIC={params.folder}mapped/metrics/${{sp}}_metrics.txt
                 FA_FILE={params.folder}genome_data/fa/${{sp}}.fa
 
+                ## metrics
                 # number of reads for the species
                 NB_READS_R1=$(($(wc -l < $CONCORD_R1) / 4))
                 if [ {params.is_paired} -eq 1 ]; then
@@ -487,13 +488,17 @@ if config["use_bowtie"]:
                 else
                     NB_READS=$NB_READS_R1
                 fi
-
                 # genome length
                 GEN_LEN=$(grep -v "^>" $FA_FILE | tr -d '\n' | wc -c)
+                # number of mapped reads
+                NB_MAPPED_NT=$(($NB_READS * {params.read_lg}))
+                # genome coverage
+                GENOME_COVERAGE=$(echo "scale=4; $NB_MAPPED_NT / $GEN_LEN" | bc)
 
-                # print in file
-                echo -e "Library\tGenome length\tNumber mapped reads\tNumber mapped nt\tPercents read coverage" > $METRIC
-                echo -e "$sp\t$GEN_LEN\t$NB_READS\t$(($NB_READS * {params.read_lg}))\t$(echo "scale=2; $NB_READS * 100 / $NB_TOTAL_READS_CLEAN" | bc)" >> $METRIC
+
+                ## print in file
+                echo -e "library\tgenome_length\tnb_mapped_reads\tnb_mapped_nt\tgenome_coverage" > $METRIC
+                echo -e "$sp\t$GEN_LEN\t$NB_READS\t$NB_MAPPED_NT\t$GENOME_COVERAGE" >> $METRIC
 
             done
                 """
@@ -703,17 +708,42 @@ if config["use_bowtie"]:
             echo -e "total reads\t$NB_TOTAL_READS" > {output.glob_metrics}
             echo -e "clean reads\t$NB_TOTAL_READS_CLEAN" >> {output.glob_metrics}
             
-            echo -e "Library\tGenome length\tNumber mapped reads\tNumber mapped nt\tPercents read coverage" >> {output.glob_metrics}
+            echo -e "library\tgenome_length\tnb_mapped_reads\tnb_mapped_nt\tgenome_coverage\tp_read_coverage_unnorm\tp_read_coverage_normalised" >> {output.glob_metrics}
 
             # for each species
             species=$(cat {input.species_file})
+
+            # initialisation
+            GLOBAL_MAPPED_READS=0
+            NB_GENOMES_COVERED=0
+
             for sp in $species; do
                 # filename
                 METRIC={params.folder}mapped/metrics/${{sp}}_metrics.txt
-                # get the second line
-                data=$(sed -n '2p' "$METRIC")
-                # add it to the global file
-                echo -e "$data" >> {output.glob_metrics}
+
+                # calculate global number of mapped reads
+                mapped_reads=$(awk 'NR==2 {print $3}' $METRIC)
+                GLOBAL_MAPPED_READS=$(echo "$GLOBAL_MAPPED_READS + $mapped_reads" | bc)
+                # calculate global number of genomes covered
+                genome_coverage=$(awk 'NR==2 {print $5}' $METRIC)
+                NB_GENOMES_COVERED=$(echo "$NB_GENOMES_COVERED + $genome_coverage" | bc)
+            done
+
+
+            for sp in $species; do
+                # filename
+                METRIC={params.folder}mapped/metrics/${{sp}}_metrics.txt
+                # get variables
+                LIBRARY=$(awk 'NR==2 {print $1}' $METRIC)
+                GENOME_LENGTH=$(awk 'NR==2 {print $2}' $METRIC)
+                NB_MAPPED_READS=$(awk 'NR==2 {print $3}' $METRIC)
+                NB_MAPPED_NT=$(awk 'NR==2 {print $4}' $METRIC)
+                GENOME_COVERAGE=$(awk 'NR==2 {print $5}' $METRIC)
+                P_READ_COVERAGE_UNNORM=$(echo "scale=2; $NB_MAPPED_READS * 100 / $GLOBAL_MAPPED_READS" | bc)
+                P_READ_COVERAGE_NORMALISED=$(echo "scale=2; $GENOME_COVERAGE * 100 / $NB_GENOMES_COVERED" | bc)
+
+                echo -e "$LIBRARY\t$GENOME_LENGTH\t$NB_MAPPED_READS\t$NB_MAPPED_NT\t$GENOME_COVERAGE\t$P_READ_COVERAGE_UNNORM\t$P_READ_COVERAGE_NORMALISED" >> {output.glob_metrics}
+
             done
             """
     
@@ -840,26 +870,69 @@ elif not config["use_bowtie"]:
             echo -e "total reads\t$NB_TOTAL_READS" > {output.glob_metrics}
             echo -e "clean reads\t$NB_TOTAL_READS_CLEAN" >> {output.glob_metrics}
             
-            echo -e "Library\tGenome length\tNumber mapped reads\tNumber mapped nt\tPercents read coverage" >> {output.glob_metrics}
+            echo -e "library\tgenome_length\tnb_mapped_reads\tnb_mapped_nt\tgenome_coverage\tp_read_coverage_unnorm\tp_read_coverage_normalised" >> {output.glob_metrics}
+
+            # initialisation
+            GLOBAL_MAPPED_READS=0
+            NB_GENOMES_COVERED=0
 
             # for each species
             for sp in "${{!dict[@]}}"; do
                 id="${{dict[$sp]}}"
                 FA_FILE={params.folder}genome_data/fa/${{sp}}.fa
 
-                # genome length
-                GEN_LEN=$(grep -v "^>" $FA_FILE | tr -d '\n' | wc -c)
 
                 # get line corresponding to the species
                 ligne=$(awk -F '\t' -v id="$id" '{{if ($7 == id) print}}' {input.report})
                 if [ ! -z "$ligne" ]; then
                     # extract right column
                     if [ {params.is_paired} -eq 1 ]; then
-                        nb_reads=$(($(echo "$ligne" | cut -f2) * 2))
+                        NB_READS=$(($(echo "$ligne" | cut -f2) * 2))
                     else
-                        nb_reads=$(echo "$ligne" | cut -f2)
+                        NB_READS=$(echo "$ligne" | cut -f2)
                     fi
-                    echo -e "$sp\t$GEN_LEN\t$nb_reads\t$(($nb_reads * {params.read_lg}))\t$(echo "scale=2; $nb_reads * 100 / $NB_TOTAL_READS_CLEAN" | bc)" >> {output.glob_metrics}
+                    # genome length
+                    GEN_LEN=$(grep -v "^>" $FA_FILE | tr -d '\n' | wc -c)
+                    # nb of mapped nucleotides
+                    NB_MAPPED_NT=$(($NB_READS * {params.read_lg}))
+                    # genome coverage
+                    GENOME_COVERAGE=$(echo "scale=3; $NB_MAPPED_NT / $GEN_LEN" | bc)
+
+                    # calculate global number of mapped reads
+                    GLOBAL_MAPPED_READS=$(echo "$GLOBAL_MAPPED_READS + $NB_READS" | bc)
+                    # calculate global number of genomes covered
+                    NB_GENOMES_COVERED=$(echo "$NB_GENOMES_COVERED + $GENOME_COVERAGE" | bc)
+                fi
+            done
+
+
+            # re-iterate to get all values and print them
+            # for each species
+            for sp in "${{!dict[@]}}"; do
+                id="${{dict[$sp]}}"
+                FA_FILE={params.folder}genome_data/fa/${{sp}}.fa
+
+                # get line corresponding to the species
+                ligne=$(awk -F '\t' -v id="$id" '{{if ($7 == id) print}}' {input.report})
+                if [ ! -z "$ligne" ]; then
+                    # extract right column
+                    if [ {params.is_paired} -eq 1 ]; then
+                        NB_READS=$(($(echo "$ligne" | cut -f2) * 2))
+                    else
+                        NB_READS=$(echo "$ligne" | cut -f2)
+                    fi
+                    # genome length
+                    GEN_LEN=$(grep -v "^>" $FA_FILE | tr -d '\n' | wc -c)
+                    # nb of mapped nucleotides
+                    NB_MAPPED_NT=$(($NB_READS * {params.read_lg}))
+                    # genome coverage
+                    GENOME_COVERAGE=$(echo "scale=3; $NB_MAPPED_NT / $GEN_LEN" | bc)
+                    # reads coverage non normalised (%)
+                    P_READ_COVERAGE_UNNORM=$(echo "scale=2; $NB_READS * 100 / $GLOBAL_MAPPED_READS" | bc)
+                    # reads coverage normalised (%)
+                    P_READ_COVERAGE_NORMALISED=$(echo "scale=2; $GENOME_COVERAGE * 100 / $NB_GENOMES_COVERED" | bc)
+
+                    echo -e "$sp\t$GEN_LEN\t$NB_READS\t$NB_MAPPED_NT\t$GENOME_COVERAGE\t$P_READ_COVERAGE_UNNORM\t$P_READ_COVERAGE_NORMALISED" >> {output.glob_metrics}
                 fi
             done
             """
