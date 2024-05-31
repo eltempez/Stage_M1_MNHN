@@ -957,7 +957,8 @@ elif not config["use_bowtie"]:
 rule visualise_metrics:
     input:
         glob_metrics = expand("{fold}{name}_{build}_global_metrics.txt", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME),
-        metagenome_infos = CONFIG_FOLDER + "metagenome_ncbi_id.txt"
+        metagenome_infos = CONFIG_FOLDER + "metagenome_ncbi_id.txt",
+        report_bracken = expand("{fold}unmapped/bracken_rescue_report.txt", fold = OUTPUT_FOLD)
     output:
         stats = expand("{fold}{name}_{build}_stats.html", fold = OUTPUT_FOLD, name = R1_NAME, build = BUILD_NAME)
     params:
@@ -966,7 +967,7 @@ rule visualise_metrics:
         CONFIG_FOLDER + "yml/visu_rmd.yml"
     shell:
         """
-        R -e "rmarkdown::render('{params.rmd}', output_file='{output.stats}')" --quiet --args "{input.glob_metrics}" "{input.metagenome_infos}"  
+        R -e "rmarkdown::render('{params.rmd}', output_file='{output.stats}')" --quiet --args "{input.glob_metrics}" "{input.metagenome_infos}" "{input.report_bracken}"  
         """
 
 
