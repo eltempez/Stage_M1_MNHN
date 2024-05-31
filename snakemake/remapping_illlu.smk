@@ -6,6 +6,7 @@
 ## Import modules
 import os
 import re
+import gzip
 
 ## Functions
 # get the prefix of a file name 
@@ -54,6 +55,18 @@ def bracken_read_lg(lg):
     closest = min(lengths, key=lambda x: abs(x - lg))
     return closest
 
+# get the read length from a fastq or fastq.gz file
+def get_read_length(fastq_file):
+    if fastq_file.split(".")[-1] == "gz":
+        with gzip.open(fastq_file, "r") as f_in:
+            f_in.readline()
+            seq = f_in.readline()
+            return len(seq.strip())
+    else:
+        with open(fastq_file, "r") as f_in:
+            f_in.readline()
+            seq = f_in.readline()
+            return len(seq.strip())
 
 
 ## Filenames
@@ -61,9 +74,9 @@ def bracken_read_lg(lg):
 KRAKEN_LIB_UNMAP = check_slash(config["kraken_library_unmapped"])
 KRAKEN_LIB = check_slash(config["kraken_library"])
 BOWTIE_INDEX = check_slash(config["bowtie_index"])
-READ_LG = config["read_lg"]
 R1 = config["r1"]
 R2 = config["r2"]
+READ_LG = get_read_length(R1)
 SPECIES_FOLD = check_slash(config["folder_species"])
 OUTPUT_FOLD = check_slash(config["output_folder"])
 BUILD_NAME = config["build_name"]
@@ -850,7 +863,7 @@ elif not config["use_bowtie"]:
             """
             declare -A dict=({params.tax_dict})
             echo "calculating metrics..."
-
+            
             # total number of reads in whole sample
             NB_TOTAL_READS_R1=$(zcat {input.r1_brut} | echo $((`wc -l`/4)))
             if [ {params.is_paired} -eq 1 ]; then

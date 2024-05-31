@@ -5,8 +5,6 @@
 # fastq files to analyse (leave r2 quotes empty if unpaired)
 r1: "/mnt/beegfs/projet-kefir/data_illumina/mcf/NG-32390_MCF_10h_lib666597_10168_3_1.fastq.gz"
 r2: "/mnt/beegfs/projet-kefir/data_illumina/mcf/NG-32390_MCF_10h_lib666597_10168_3_2.fastq.gz"
-# read length
-read_lg: 151
 
 # species folder : should only contain <speciesname>.fa or <speciesname>.fasta file for each species
 folder_species: "/mnt/beegfs/projet-kefir/metagenome/"
@@ -14,7 +12,7 @@ folder_species: "/mnt/beegfs/projet-kefir/metagenome/"
 
 ##### Output infos #####
 # output folder (leave empty quotes if you want the output in the folder from which you are launching the snakemake command line)
-output_folder: "/mnt/beegfs/etempez/remapping/bowtie_paired/"
+output_folder: "/mnt/beegfs/etempez/remapping/output/"
 # build name : name of the metagenome version
 build_name: "final_lib"
 
