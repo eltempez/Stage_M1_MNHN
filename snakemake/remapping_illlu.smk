@@ -735,10 +735,10 @@ if config["use_bowtie"]:
                 METRIC={params.folder}mapped/metrics/${{sp}}_metrics.txt
 
                 # calculate global number of mapped reads
-                mapped_reads=$(awk 'NR==2 {print $3}' $METRIC)
+                mapped_reads=$(awk 'NR==2 {{print $3}}' $METRIC)
                 GLOBAL_MAPPED_READS=$(echo "$GLOBAL_MAPPED_READS + $mapped_reads" | bc)
                 # calculate global number of genomes covered
-                genome_coverage=$(awk 'NR==2 {print $5}' $METRIC)
+                genome_coverage=$(awk 'NR==2 {{print $5}}' $METRIC)
                 NB_GENOMES_COVERED=$(echo "$NB_GENOMES_COVERED + $genome_coverage" | bc)
             done
 
@@ -747,11 +747,11 @@ if config["use_bowtie"]:
                 # filename
                 METRIC={params.folder}mapped/metrics/${{sp}}_metrics.txt
                 # get variables
-                LIBRARY=$(awk 'NR==2 {print $1}' $METRIC)
-                GENOME_LENGTH=$(awk 'NR==2 {print $2}' $METRIC)
-                NB_MAPPED_READS=$(awk 'NR==2 {print $3}' $METRIC)
-                NB_MAPPED_NT=$(awk 'NR==2 {print $4}' $METRIC)
-                GENOME_COVERAGE=$(awk 'NR==2 {print $5}' $METRIC)
+                LIBRARY=$(awk 'NR==2 {{print $1}}' $METRIC)
+                GENOME_LENGTH=$(awk 'NR==2 {{print $2}}' $METRIC)
+                NB_MAPPED_READS=$(awk 'NR==2 {{print $3}}' $METRIC)
+                NB_MAPPED_NT=$(awk 'NR==2 {{print $4}}' $METRIC)
+                GENOME_COVERAGE=$(awk 'NR==2 {{print $5}}' $METRIC)
                 P_READ_COVERAGE_UNNORM=$(echo "scale=2; $NB_MAPPED_READS * 100 / $GLOBAL_MAPPED_READS" | bc)
                 P_READ_COVERAGE_NORMALISED=$(echo "scale=2; $GENOME_COVERAGE * 100 / $NB_GENOMES_COVERED" | bc)
 

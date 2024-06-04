@@ -122,8 +122,8 @@ ggplot(data_1, aes(x = "", y = nb, fill = fct_inorder(condition))) +
   coord_polar("y", start = 0) +
   scale_fill_manual(name = "Percents of reads",
                     values = c("low_qual" = "#737373", 
-                               "unaligned" = "#873939", 
-                               "aligned" = "#398772"),
+                               "unaligned" = "#AD4848", 
+                               "aligned" = "#207883"),
                     labels = c("low_qual" = "low quality", 
                                "unaligned" = "unmapped", 
                                "aligned" = "mapped"))
@@ -154,7 +154,7 @@ other_colors <- c()
 
 # only generate colors if there are species in the group
 if(length(lacto_species) > 0) {
-  lacto_colors <- paletteer::paletteer_dynamic("cartography::red.pal", length(lacto_species), -1)
+  lacto_colors <- paletteer::paletteer_dynamic("cartography::sand.pal", length(lacto_species), -1)
   names(lacto_colors) <- lacto_species
 }
 
@@ -221,10 +221,10 @@ ggplot(data_3, aes(x = "", y = fct_inorder(species), size = genome_coverage, col
                                  "lacto" = "Lactobacillales",
                                  "yeast" = "Yeasts",
                                  "other" = "Other"),
-                      values = c("aceto" = "#115379FF",
-                                 "lacto" = "#7C000CFF",
-                                 "yeast" = "#186D2EFF",
-                                 "other" = "#76388AFF")) +
+                      values = c("aceto" = "#13618EFF",
+                                 "lacto" = "#BE8027FF",
+                                 "yeast" = "#1A7832FF",
+                                 "other" = "#472572FF")) +
   scale_size_area(labels = comma, name = "number of times the genome is covered") +
   labs(x = "", y = "species", 
        title = "Genome coverage")
@@ -263,6 +263,7 @@ ggplot(data_4, aes(x = fct_inorder(name), y = p_reads_clade, fill = family, colo
         axis.text.x = element_text(angle = 45, hjust = 1)) +
   labs(x = "", y = "% of reads", 
        title = "10 most present species in rescued reads") +
-  geom_bar(stat = "identity")
+  geom_bar(stat = "identity") +
+  scale_color_manual(values = )
 ```
 
