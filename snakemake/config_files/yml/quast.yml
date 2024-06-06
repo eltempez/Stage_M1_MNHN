@@ -1,0 +1,5 @@
+name: quast # conda environment name #conda env create --name quast --file=quast.yml
+channels:
+- bioconda
+dependencies:
+- quast

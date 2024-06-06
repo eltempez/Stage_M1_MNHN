@@ -1,0 +1,13 @@
+name: visu_rmd # conda environment name #conda env create --name visu_rmd --file=visu_rmd.yml
+channels:
+- bioconda
+- conda-forge
+dependencies:
+- r-quarto
+- r-ggplot2
+- r-tidyverse
+- r-ggrepel
+- r-scales
+- r-dplyr
+- r-paletteer
+- r-ggthemes

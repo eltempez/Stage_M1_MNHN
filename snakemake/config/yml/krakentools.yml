@@ -1,6 +1,0 @@
-name: krakentools # conda environment name #conda env create --name krakentools --file=krakentools.yml
-channels:
-- bioconda
-- conda-forge
-dependencies:
-- krakentools

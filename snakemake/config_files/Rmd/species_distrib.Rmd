@@ -1,0 +1,268 @@
+---
+title: "Species distribution (normalised by genome length)"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, results = 'hide', warning=FALSE, message=FALSE, out.width = "100%")
+```
+
+
+```{r}
+library(ggplot2)
+library(tidyverse)
+library(ggrepel)
+library(scales)
+library(dplyr)
+library(paletteer)
+library(ggthemes)
+
+##### Setting up #####
+# Functions
+get_sample_name <- function(file_path) {
+  species_name <- gsub(".*/([^/]+)_global_metrics\\.txt", "\\1", file_path)
+  return(species_name)
+}
+
+# bracken functions
+get_family <- function(data_species, data_brut) {
+  families <- c()
+  indexes <- as.numeric(rownames(data_species))
+  for (index in indexes) {
+    if (data_brut[index, "rank"] != "S") {
+      echo("All data_species entries should be at species level")
+    } else {
+      rank <- ""
+      i <- index
+      while (rank != "F") {
+        i <- i - 1
+        rank <- data_brut[i, "rank"]
+        fam <- data_brut[i, "name"]
+        if (rank == "O") {
+          fam <- "Unclassified"
+          break
+        } 
+      }
+      families <- c(families, fam)
+    }
+  }
+  return(families)
+}
+
+get_domain <- function(data_species, data_brut) {
+  domains <- c()
+  indexes <- as.numeric(rownames(data_species))
+  for (index in indexes) {
+    if (data_brut[index, "rank"] != "S") {
+      echo("All data_species entries should be at species level")
+    } else {
+      rank <- ""
+      i <- index
+      while (rank != "D") {
+        i <- i - 1
+        rank <- data_brut[i, "rank"]
+        dom <- data_brut[i, "name"]
+        if (rank == "R") {
+          dom <- "Unclassified"
+          break
+        } 
+      }
+      domains <- c(domains, dom)
+    }
+  }
+  return(domains)
+} 
+
+# Read input files
+glob_metrics_file <- commandArgs(trailingOnly=T)[1]
+species_file <- commandArgs(trailingOnly=T)[2]
+bracken_file <- commandArgs(trailingOnly=T)[3]
+
+data <- read.table(glob_metrics_file, skip = 2, header = TRUE, sep = "\t")
+nb_reads <- read.table(glob_metrics_file, nrows = 1, sep =  "\t")[, 2]
+nb_reads_clean <- read.table(glob_metrics_file, nrows = 1, sep =  "\t", skip = 1)[, 2]
+sample_name <- get_sample_name(glob_metrics_file)
+
+species_info <- read.table(species_file, sep = "\t")
+colnames(species_info) <- c("library", "ncbi", "species", "type")
+
+bracken_data <- read.table(bracken_file, sep = "\t", header = FALSE)
+names(bracken_data) <- c("p_reads_clade", "n_reads_clade", "n_reads_taxon", "rank", "ncbi_id", "name")
+bracken_data$name <- trimws(bracken_data$name)
+```
+# **sample : `r sample_name`**
+
+$$\\[0.5in]$$
+
+```{r}
+##### Graphs #####
+## Number of reads cleaned and aligned
+# create dataframe
+nb_low_qual <- nb_reads - nb_reads_clean
+nb_aligned_reads <- sum(data$nb_mapped_reads)
+data_1 <- data.frame("condition" = c("low_qual", "unaligned", "aligned"),
+                     "nb" = c(nb_low_qual,
+                              nb_reads_clean - nb_aligned_reads,
+                              nb_aligned_reads))
+# add percents
+data_1 %>%
+  arrange(desc(nb)) %>%
+  mutate(prop = percent(nb / sum(nb), 0.1)) -> data_1 
+
+# pie chart
+ggplot(data_1, aes(x = "", y = nb, fill = fct_inorder(condition))) +
+  geom_bar(width = 1, linewidth = 0.1, color = "white", stat = "identity") +
+  geom_label_repel(aes(label = prop), 
+                   segment.colour = rgb(0, 0, 0, 0),
+                   size = 4, show.legend = FALSE, nudge_x = 0.5) +
+  theme_void() +
+  theme(plot.title = element_text(hjust = 0.5)) + 
+  ggtitle("Global read distribution") +
+  coord_polar("y", start = 0) +
+  scale_fill_manual(name = "Percents of reads",
+                    values = c("low_qual" = "#737373", 
+                               "unaligned" = "#AD4848", 
+                               "aligned" = "#207883"),
+                    labels = c("low_qual" = "low quality", 
+                               "unaligned" = "unmapped", 
+                               "aligned" = "mapped"))
+```
+
+$$\\[1in]$$
+
+```{r}
+## Species distribution
+data_2 <- merge(species_info, 
+                data[, c("library", "p_read_coverage_normalised", "nb_mapped_reads")], 
+                by = "library")
+data_2 %>%
+  arrange(type, desc(p_read_coverage_normalised)) -> data_2
+
+# Barplots
+# set up colors
+lacto_species <- data_2[which(data_2[, "type"] == "lacto"), "species"]
+aceto_species <- data_2[which(data_2[, "type"] == "aceto"), "species"]
+yeast_species <- data_2[which(data_2[, "type"] == "yeast"), "species"]
+other_species <- data_2[which(data_2[, "type"] == "other"), "species"]
+
+# initialise colors
+lacto_colors <- c()
+aceto_colors <- c()
+yeast_colors <- c()
+other_colors <- c()
+
+# only generate colors if there are species in the group
+if(length(lacto_species) > 0) {
+  lacto_colors <- paletteer::paletteer_dynamic("cartography::sand.pal", length(lacto_species), -1)
+  names(lacto_colors) <- lacto_species
+}
+
+if(length(aceto_species) > 0) {
+  aceto_colors <- paletteer::paletteer_dynamic("cartography::blue.pal", length(aceto_species), -1)
+  names(aceto_colors) <- aceto_species
+}
+
+if(length(yeast_species) > 0) {
+  yeast_colors <- paletteer::paletteer_dynamic("cartography::green.pal", length(yeast_species), -1)
+  names(yeast_colors) <- yeast_species
+}
+
+if(length(other_species) > 0) {
+  other_colors <- paletteer::paletteer_dynamic("cartography::purple.pal", length(other_species), -1)
+  names(other_colors) <- other_species
+}
+
+# plot
+ggplot(data_2, aes(x = type, y = p_read_coverage_normalised, fill = fct_inorder(species))) +
+  geom_bar(stat = "identity", position = position_dodge(preserve = "single")) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(x = "", y = "%", 
+       title = "Proportion of reads mapped\non each species") +
+  guides(fill = guide_legend(title = "species", nrow = 12)) +
+  scale_fill_manual(values = c(aceto_colors, lacto_colors, yeast_colors, other_colors)) +
+  scale_x_discrete(labels = c("aceto" = "Acetobacteraceae", 
+                              "lacto" = "Lactobacillales", 
+                              "yeast" = "Yeasts",
+                              "other" = "Other"))
+```
+
+
+```{r}
+# grouped by type of micro-organism
+ggplot(data_2, aes(x = type, y = p_read_coverage_normalised, fill = fct_inorder(species))) +
+  geom_bar(stat = "identity") +
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(x = "", y = "%", 
+       title = "") +
+  guides(fill = FALSE) +
+  scale_fill_manual(values = c(aceto_colors, lacto_colors, yeast_colors, other_colors)) +
+  scale_x_discrete(labels = c("aceto" = "Acetobacteraceae", 
+                              "lacto" = "Lactobacillales", 
+                              "yeast" = "Yeasts",
+                              "other" = "Other"))
+```
+
+$$\\[1in]$$
+
+```{r}
+# Dotplot with all 21 species
+data_3 <- merge(species_info, 
+                data[, c("library", "p_read_coverage_normalised", "genome_coverage")], 
+                by = "library")
+data_3 %>%
+  arrange(desc(p_read_coverage_normalised)) -> data_3
+
+ggplot(data_3, aes(x = "", y = fct_inorder(species), size = genome_coverage, color = type)) +
+  geom_point(alpha = 0.85) +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  scale_colour_manual(labels = c("aceto" = "Acetobacteraceae",
+                                 "lacto" = "Lactobacillales",
+                                 "yeast" = "Yeasts",
+                                 "other" = "Other"),
+                      values = c("aceto" = "#13618EFF",
+                                 "lacto" = "#BE8027FF",
+                                 "yeast" = "#1A7832FF",
+                                 "other" = "#472572FF")) +
+  scale_size_area(labels = comma, name = "number of times the genome is covered") +
+  labs(x = "", y = "species", 
+       title = "Genome coverage")
+```
+
+$$\\[0.5in]$$
+
+# **Rescue of unmapped reads** (non normalised)
+
+```{r}
+# keep only infos on  the species level
+bracken_species <- bracken_data[bracken_data[, "rank"] == "S", c("p_reads_clade", "n_reads_clade", "name")]
+bracken_species[, "family"] <- get_family(bracken_species, bracken_data)
+bracken_species[, "domain"] <- get_domain(bracken_species, bracken_data)
+bracken_species[, "global_distrib"] <- bracken_species[, "n_reads_clade"]
+
+# Number of rescued reads
+nb_rescued_reads <- bracken_data[1, "n_reads_clade"]
+nb_unrescued_reads <- nb_reads_clean - nb_aligned_reads - nb_rescued_reads
+```
+
+### Out of `r round((nb_reads_clean - nb_aligned_reads) * 100 / nb_reads, 1)`% of reads that were unmapped, **`r round(nb_rescued_reads * 100 / nb_reads, 1)`%** were aligned to known species.
+
+$$\\[0.5in]$$
+
+```{r}
+# grouped by domain
+bracken_species %>%
+  arrange(desc(p_reads_clade)) -> bracken_species
+data_4 <- bracken_species[1:10, ]
+data_4$name <- gsub(" ", "\n", data_4$name)
+
+
+ggplot(data_4, aes(x = fct_inorder(name), y = p_reads_clade, fill = family, color = domain)) +
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(x = "", y = "% of reads", 
+       title = "10 most present species in rescued reads") +
+  geom_bar(stat = "identity")
+```
+

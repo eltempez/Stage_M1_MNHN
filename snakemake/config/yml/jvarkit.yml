@@ -1,5 +1,0 @@
-name: jvarkit # conda environment name #conda env create --name jvarkit --file=jvarkit.yml
-channels:
-- bioconda
-dependencies:
-- jvarkit

@@ -1,0 +1,5 @@
+name: fastp # conda environment name #conda env create --name fastp --file=fastp.yml
+channels:
+- bioconda
+dependencies:
+- fastp

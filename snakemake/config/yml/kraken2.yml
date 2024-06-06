@@ -1,6 +1,0 @@
-name: kraken2 # conda environment name #conda env create --name kraken2 --file=kraken2.yml
-channels:
-- bioconda
-dependencies:
-- kraken2
-- bracken

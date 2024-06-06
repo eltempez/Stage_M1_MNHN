@@ -1,5 +1,0 @@
-name: krona # conda environment name #conda env create --name krona --file=krona.yml
-channels:
-- bioconda
-dependencies:
-- krona
