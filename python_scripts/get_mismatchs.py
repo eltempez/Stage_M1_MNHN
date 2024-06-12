@@ -16,8 +16,10 @@ def get_prefix(file_path, is_paired_illumina = False):
 # list of taxonomy ids
 dict_ncbi = {"B3": 483199, "B4": 318683, "B6": 38307, "B1": 442, "B5": 28448, "B2": 436, "B11": 1597, "B18": 1588, "B10": 152331, "B7": 1245, "B14": 399370, "B13": 82688, "B17": 259059, "B21": 2203724, "B12": 304207, "BB": 5007, "Y3": 4926, "Y1": 4932, "Y2": 48255, "B16": 542, "B15": 336988}
 # paths
-bowtie_folder = "/home/eliotttempez/Documents/tests/outputs_mcf10_snk/mapped/aligned/"
-kraken_file = "/home/eliotttempez/Documents/tests/kraken_kmers/kraken_output_40_kmers.txt"
+bowtie_folder = "/home/eliotttempez/Documents/tests/kraken_bowtie/donnees_soutenance/mcf_bowtie/mapped/aligned"
+kraken_file = "/home/eliotttempez/Documents/tests/kraken_bowtie/donnees_soutenance/mcf_kraken/kraken_output.txt"
+output_file = "/home/eliotttempez/Documents/tests/kraken_bowtie/donnees_soutenance/reads_mcf.txt"
+mismatchs_only = False
 
 
 # build dicts with read name as key, and tax id as value
@@ -44,23 +46,37 @@ for file_name in os.listdir(bowtie_folder):
 
 
 # get mismatchs
-# list of mismatched reads 
-mismatched_reads = []
-nb_matched = 0
-for read in global_dict:
-    if ("bowtie" not in global_dict[read]) or ("kraken" not in global_dict[read]) or (global_dict[read]["bowtie"] != global_dict[read]["kraken"]):
-        mismatched_reads.append(read)
-    else:
-        nb_matched +=1
-
-# output in file
-with open("./mismatchs_bt_kr.txt", "w") as f_out:
-    f_out.write(f"total concordant reads\t{nb_matched}\n")
-    f_out.write(f"seq id\tbowtie\tkraken\n")
-    for mis in mismatched_reads:
-        if "bowtie" not in global_dict[mis]:
-            f_out.write(f"{mis}\t0\t{global_dict[mis]['kraken']}\n")
-        elif "kraken" not in global_dict[mis]:
-            f_out.write(f"{mis}\t{global_dict[mis]['bowtie']}\t0\n")
+if mismatchs_only:
+    # list of mismatched reads 
+    mismatched_reads = []
+    nb_matched = 0
+    for read in global_dict:
+        if ("bowtie" not in global_dict[read]) or ("kraken" not in global_dict[read]) or (global_dict[read]["bowtie"] != global_dict[read]["kraken"]):
+            mismatched_reads.append(read)
         else:
-            f_out.write(f"{mis}\t{global_dict[mis]['bowtie']}\t{global_dict[mis]['kraken']}\n")
+            nb_matched +=1
+
+    # output in file
+    with open(output_file, "w") as f_out:
+        f_out.write(f"total concordant reads\t{nb_matched}\n")
+        f_out.write(f"seq id\tbowtie\tkraken\n")
+        for mis in mismatched_reads:
+            if "bowtie" not in global_dict[mis]:
+                f_out.write(f"{mis}\t0\t{global_dict[mis]['kraken']}\n")
+            elif "kraken" not in global_dict[mis]:
+                f_out.write(f"{mis}\t{global_dict[mis]['bowtie']}\t0\n")
+            else:
+                f_out.write(f"{mis}\t{global_dict[mis]['bowtie']}\t{global_dict[mis]['kraken']}\n")
+
+
+# write all matches
+else:
+    with open(output_file, "w") as f_out:
+        f_out.write(f"seq id\tbowtie\tkraken\n")
+        for read in global_dict:
+            if "bowtie" not in global_dict[read]:
+                f_out.write(f"{read}\t0\t{global_dict[read]['kraken']}\n")
+            elif "kraken" not in global_dict[read]:
+                f_out.write(f"{read}\t{global_dict[read]['bowtie']}\t0\n")
+            else:
+                f_out.write(f"{read}\t{global_dict[read]['bowtie']}\t{global_dict[read]['kraken']}\n")

@@ -1,0 +1,5 @@
+prg	kefir	p_mapped
+Bowtie2	Kefir A	23.11
+Bowtie2	Kefir MCF	89.7
+Kraken2	Kefir A	25.33
+Kraken2	Kefir MCF	92.94
