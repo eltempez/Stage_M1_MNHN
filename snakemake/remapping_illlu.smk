@@ -33,7 +33,7 @@ def check_slash(folder_path):
 CONFIG_FOLDER = check_slash(config["config_folder"])
 
 # get ncbi accession tax ids from metagenome_ncbi_id.txt file
-def get_ncbi_id_metagenome(file_path):
+def get_ncbi_id_metagenome():
     file_path = CONFIG_FOLDER + "metagenome_ncbi_id.txt"
     dict_ncbi = {}
     with open(file_path, "r") as f_id:
@@ -80,7 +80,6 @@ READ_LG = get_read_length(R1)
 SPECIES_FOLD = check_slash(config["folder_species"])
 OUTPUT_FOLD = check_slash(config["output_folder"])
 BUILD_NAME = config["build_name"]
-DICT_NCBI = get_ncbi_id_metagenome(CONFIG_FOLDER + "metagenome_ncbi_id.txt")
 # check if paired or unpaired
 if R2 == "":
     is_paired = False
@@ -198,7 +197,7 @@ rule handle_contigs_fa:
     params:
         species_fold = SPECIES_FOLD,
         output_fold = expand("{out}genome_data/fa/", out = OUTPUT_FOLD),
-        dict_ncbi = DICT_NCBI
+        dict_ncbi = get_ncbi_id_metagenome()
     run:
         # create output directory if doesn't exist
         shell("mkdir -p {params.output_fold}")
@@ -858,7 +857,7 @@ elif not config["use_bowtie"]:
             build = BUILD_NAME,
             folder = OUTPUT_FOLD,
             read_lg = READ_LG,
-            tax_dict = bash_dict(DICT_NCBI),
+            tax_dict = bash_dict(get_ncbi_id_metagenome()),
             is_paired = int(is_paired)
         shell:
             """
@@ -1023,7 +1022,10 @@ rule bracken_unmapped:
         """
         echo "calculating species abundance for unmapped reads..."
         # build bracken library
-        bracken-build -d {params.library} -l {params.read_lg} -t {threads}
+        if [ ! -f "{params.library}database{params.read_lg}mers.kmer_distrib" ]; then
+            bracken-build -d {params.library} -l {params.read_lg} -t {threads}
+        fi
+
         # calculate species abundance
         bracken -d {params.library} -i {input.report_kraken} -r {params.read_lg} -t 50 -o {output.out_bracken} -w {output.report_bracken}
         """
