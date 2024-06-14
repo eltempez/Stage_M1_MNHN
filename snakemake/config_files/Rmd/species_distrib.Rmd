@@ -215,7 +215,7 @@ data_3 %>%
   arrange(desc(p_read_coverage_normalised)) -> data_3
 
 ggplot(data_3, aes(x = "", y = fct_inorder(species), size = genome_coverage, color = type)) +
-  geom_point(alpha = 0.85) +
+  geom_point(aes(alpha = genome_coverage == 0)) +
   theme(plot.title = element_text(hjust = 0.5)) +
   scale_colour_manual(labels = c("aceto" = "Acetobacteraceae",
                                  "lacto" = "Lactobacillales",
@@ -225,9 +225,14 @@ ggplot(data_3, aes(x = "", y = fct_inorder(species), size = genome_coverage, col
                                  "lacto" = "#BE8027FF",
                                  "yeast" = "#1A7832FF",
                                  "other" = "#472572FF")) +
-  scale_size_area(labels = comma, name = "number of times the genome is covered") +
+  scale_size_continuous(labels = comma, 
+                        name = "number of times\nthe genome is covered",
+                        limits = c(min(subset(data_3$genome_coverage, data_3$genome_coverage != 0)), 
+                                    max(data_3$genome_coverage))) +
   labs(x = "", y = "species", 
-       title = "Genome coverage")
+       title = "Genome coverage") +
+  scale_alpha_manual(values = c(0.85,0)) +
+  guides(alpha = FALSE)
 ```
 
 $$\\[0.5in]$$
